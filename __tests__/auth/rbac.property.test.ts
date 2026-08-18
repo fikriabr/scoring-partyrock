@@ -15,7 +15,9 @@ import * as fc from 'fast-check'
 import {
   checkAccess,
   isAdminPath,
+  homePathForRole,
   ADMIN_PATHS,
+  ROLE_HOME,
   type Role,
 } from '@/lib/auth/rbac'
 
@@ -205,5 +207,33 @@ describe('Property 1: RBAC Access Control', () => {
       }),
       { numRuns: 200 },
     )
+  })
+  // ---------------------------------------------------------------------------
+  // Property 1j: The post-login landing page is always reachable by its own role
+  // ---------------------------------------------------------------------------
+
+  it('1j — homePathForRole SHALL return a path that checkAccess allows for that role', () => {
+    fc.assert(
+      fc.property(roleArb, (role) => {
+        const home = homePathForRole(role)
+        expect(home).toBe(ROLE_HOME[role])
+        expect(checkAccess(home, role).allowed).toBe(true)
+      }),
+      { numRuns: 100 },
+    )
+  })
+
+  it('1k — A JURY SHALL NOT be sent to an admin-only path after signing in', () => {
+    const juryHome = homePathForRole('JURY')
+    expect(isAdminPath(juryHome)).toBe(false)
+    expect(checkAccess(juryHome, 'JURY')).toEqual({ allowed: true })
+  })
+
+  it('1l — A missing or unknown role SHALL land on /login', () => {
+    expect(homePathForRole(null)).toBe('/login')
+    expect(homePathForRole(undefined)).toBe('/login')
+    // A stale token carrying a role that no longer exists must not fall through
+    // to an admin page.
+    expect(homePathForRole('SUPERUSER' as Role)).toBe('/login')
   })
 })

@@ -7,6 +7,7 @@ import { auth } from '@/lib/auth/config'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
+import SignOutButton from '@/components/SignOutButton'
 
 export default async function AdminLayout({
   children,
@@ -82,6 +83,9 @@ export default async function AdminLayout({
               </p>
             </div>
           </div>
+          <div className="mt-3">
+            <SignOutButton />
+          </div>
         </div>
       </aside>
 
@@ -91,6 +95,9 @@ export default async function AdminLayout({
           🎯
         </div>
         <span className="text-lg font-bold text-gray-900">PartyRock</span>
+        <div className="ml-auto">
+          <SignOutButton variant="compact" />
+        </div>
       </div>
 
       {/* Mobile navigation */}

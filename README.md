@@ -94,11 +94,10 @@ cp .env.example .env
 | --------------------------------- | --------------------------------------------------------------- |
 | `DATABASE_URL`                    | Connection string Neon, sertakan `?sslmode=require`              |
 | `AUTH_SECRET` / `NEXTAUTH_SECRET` | Isi sama, hasil `openssl rand -base64 32`                        |
-| `AUTH_URL` / `NEXTAUTH_URL`       | `http://localhost:3000` saat dev, domain production saat deploy  |
 | `GEMINI_API_KEY`                  | API key Google AI Studio                                         |
 | `GEMINI_MODEL_ID`                 | Default `gemini-flash-lite-latest`                               |
 | `CAPTURE_TOKEN`                   | Secret bersama untuk endpoint capture, `openssl rand -hex 24`    |
-| `APP_BASE_URL`                    | Alamat aplikasi yang dituju script capture                       |
+| `APP_BASE_URL`                    | Opsional — alamat aplikasi yang dituju script capture, lihat di bawah |
 | `PR_CHROME_PROFILE`               | Opsional, **lokal saja** — lihat [Pipeline capture](#pipeline-capture) |
 
 Dorong skema ke database dan buat akun admin pertama:
@@ -177,6 +176,12 @@ Juri juga dibatasi di lapisan data: hanya bisa melihat dan menilai project di
 kategori yang ditugaskan padanya lewat tabel `CategoryJury` — lihat
 [lib/auth/jury-access.ts](lib/auth/jury-access.ts).
 
+Setelah login, form mengarahkan ke `/`, dan [app/page.tsx](app/page.tsx)
+meneruskan sesuai peran lewat `homePathForRole`: admin ke `/admin`, juri ke
+`/jury/projects`. Tujuan tiap peran didefinisikan sekali di `ROLE_HOME`
+([lib/auth/rbac.ts](lib/auth/rbac.ts)), dan property test memastikan tujuan itu
+memang lolos `checkAccess` untuk peran tersebut.
+
 Halaman `/public/leaderboard/[token]` sengaja terbuka tanpa auth. Tokennya acak
 per kategori dan baru berlaku setelah admin menekan Publish.
 
@@ -189,7 +194,16 @@ browser sungguhan yang dikemudikan manusia, bukan hasil scraping.
 
 Bagian ini **tidak bisa jalan di serverless** — butuh Chrome headed, profil di
 filesystem, dan manusia yang mengklik widget. Jalankan dari komputer sendiri,
-arahkan ke aplikasi yang sudah dideploy lewat `APP_BASE_URL`.
+arahkan ke aplikasi yang sudah dideploy lewat `--base-url`:
+
+```bash
+npm run capture -- --base-url https://nama-app.vercel.app
+```
+
+Tanpa flag itu, script memakai `APP_BASE_URL` bila diisi, lalu domain Vercel
+(`VERCEL_PROJECT_PRODUCTION_URL` / `VERCEL_URL`) bila variabelnya ada di
+lingkungan — misalnya hasil `vercel env pull` — dan terakhir jatuh ke
+`http://localhost:3000`. URL yang dipakai dicetak saat script mulai jalan.
 
 ```bash
 npm run capture:clone-profile   # sekali saja: salin sesi login Chrome
@@ -246,8 +260,12 @@ diperhatikan:
   atau `lib/` yang mengimpor Playwright, jadi tidak ada yang perlu dipisahkan —
   cukup jangan pernah menjalankannya di server.
 - **Environment variables.** Set semua variabel dari tabel [Setup](#setup) kecuali
-  `PR_CHROME_PROFILE` dan `PR_CHROME_PROFILE_DIR` yang khusus lokal. Arahkan
-  `AUTH_URL`/`NEXTAUTH_URL` ke domain production.
+  `PR_CHROME_PROFILE` dan `PR_CHROME_PROFILE_DIR` yang khusus lokal.
+- **Jangan set `AUTH_URL`/`NEXTAUTH_URL`.** `authConfig` memakai `trustHost: true`,
+  jadi Auth.js membaca domain dari request yang masuk — sama benarnya di
+  localhost, di preview deployment, maupun di domain production. Kalau
+  `AUTH_URL` diisi, redirect setelah login dipaksa ke alamat itu, dan login di
+  domain lain akan terlihat gagal.
 - **Jangan set `NODE_ENV=production` atau `NPM_CONFIG_PRODUCTION=true`** di
   environment build. Keduanya membuat devDependencies dilewati, padahal CLI
   `prisma` ada di sana dan dibutuhkan oleh `postinstall: prisma generate`.

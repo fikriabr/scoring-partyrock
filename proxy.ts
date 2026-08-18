@@ -8,11 +8,31 @@ import { getToken } from 'next-auth/jwt'
 import { checkAccess } from '@/lib/auth/rbac'
 import type { Role } from '@/lib/auth/rbac'
 
+const secret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET
+
+/**
+ * Reads the session JWT regardless of which cookie name Auth.js used.
+ *
+ * Over HTTPS (Vercel) the cookie is `__Secure-authjs.session-token`; over plain
+ * HTTP it is `authjs.session-token`. The name is not just a lookup key — it is
+ * also the HKDF salt for decrypting the JWT — so guessing wrong yields a null
+ * token and an endless redirect back to /login even with valid credentials.
+ * We try the name implied by the request protocol first, then the other one, so
+ * the proxy also survives proxies that rewrite the scheme.
+ */
+async function readSessionToken(request: NextRequest) {
+  const isHttps =
+    request.nextUrl.protocol === 'https:' ||
+    request.headers.get('x-forwarded-proto') === 'https'
+
+  return (
+    (await getToken({ req: request, secret, secureCookie: isHttps })) ??
+    (await getToken({ req: request, secret, secureCookie: !isHttps }))
+  )
+}
+
 export default async function proxy(request: NextRequest) {
-  const token = await getToken({
-    req: request,
-    secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
-  })
+  const token = await readSessionToken(request)
 
   const role = token?.role as Role | undefined
   const decision = checkAccess(request.nextUrl.pathname, role ?? null)

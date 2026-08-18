@@ -18,11 +18,14 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
+      // Land on "/", which reads the fresh session server-side and forwards to
+      // the right dashboard for the role. Sending everyone straight to /admin
+      // would greet a jury with the proxy's 403 response.
       const result = await signIn('credentials', {
         email,
         password,
         redirect: false,
-        callbackUrl: '/admin',
+        callbackUrl: '/',
       })
 
       if (result?.error) {

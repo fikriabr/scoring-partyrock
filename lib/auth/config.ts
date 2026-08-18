@@ -84,6 +84,14 @@ export const authConfig: NextAuthConfig = {
     }),
   ],
 
+  // Derive the application URL from the incoming request instead of a
+  // hardcoded AUTH_URL. Without this, Auth.js falls back to AUTH_URL for the
+  // post-login redirect, so signing in on a Vercel domain would bounce the
+  // browser to http://localhost:3000/admin. Vercel terminates TLS in front of
+  // the app and forwards the real host, which Auth.js reads from
+  // x-forwarded-host / x-forwarded-proto.
+  trustHost: true,
+
   session: {
     strategy: 'jwt',
   },

@@ -33,7 +33,10 @@
  * Environment (.env)
  * ------------------
  *   CAPTURE_TOKEN       shared secret, must match the running app
- *   APP_BASE_URL        default http://localhost:3000
+ *   APP_BASE_URL        optional. Without it the script uses the Vercel domain
+ *                       (VERCEL_PROJECT_PRODUCTION_URL / VERCEL_URL) when those
+ *                       are present, otherwise http://localhost:3000. Override
+ *                       per run with --base-url.
  *   PR_CHROME_PROFILE   Chrome user-data-dir to reuse. Defaults to a
  *                       dedicated folder in this repo so your everyday Chrome
  *                       profile is never locked or modified. Point it at your
@@ -57,7 +60,6 @@ dotenv.config({ path: path.join(projectRoot, '.env') })
 const CAPTURE_SCRIPT = path.join(projectRoot, 'public', 'partyrock-capture.js')
 const DEFAULT_PROFILE_DIR = path.join(projectRoot, '.pr-chrome-profile')
 
-const APP_BASE_URL = (process.env.APP_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '')
 const CAPTURE_TOKEN = (process.env.CAPTURE_TOKEN || '').trim()
 const PROFILE_DIR = process.env.PR_CHROME_PROFILE || DEFAULT_PROFILE_DIR
 
@@ -76,19 +78,53 @@ const usingRealProfile = PROFILE_DIR !== DEFAULT_PROFILE_DIR
 // ---------------------------------------------------------------------------
 
 function parseArgs(argv) {
-  const args = { all: false, category: null, limit: null, urls: null }
+  const args = { all: false, category: null, limit: null, urls: null, baseUrl: null }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--all') args.all = true
     else if (arg === '--category') args.category = argv[++i]
     else if (arg === '--limit') args.limit = Number(argv[++i])
     else if (arg === '--urls') args.urls = argv[++i]
+    else if (arg === '--base-url') args.baseUrl = argv[++i]
     else if (arg === '--help' || arg === '-h') args.help = true
   }
   return args
 }
 
 const args = parseArgs(process.argv.slice(2))
+
+// ---------------------------------------------------------------------------
+// Where to reach the app
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the app's base URL without hardcoding a host.
+ *
+ * Order: explicit --base-url, then APP_BASE_URL, then the Vercel system
+ * variables (VERCEL_PROJECT_PRODUCTION_URL is the stable production domain;
+ * VERCEL_URL is the per-deployment one, both bare hostnames), then localhost.
+ * The Vercel entries only exist when they were pulled into .env — e.g. via
+ * `vercel env pull` with "Automatically expose System Environment Variables"
+ * enabled — so a purely local run still falls through to localhost.
+ */
+function resolveAppBaseUrl(override) {
+  const explicit = (override || process.env.APP_BASE_URL || '').trim()
+  if (explicit) return explicit.replace(/\/+$/, '')
+
+  const vercelHost = (
+    process.env.VERCEL_PROJECT_PRODUCTION_URL ||
+    process.env.VERCEL_URL ||
+    ''
+  ).trim()
+  if (vercelHost) {
+    // Vercel exposes these as bare hostnames, without a scheme.
+    return /^https?:\/\//.test(vercelHost) ? vercelHost.replace(/\/+$/, '') : `https://${vercelHost}`
+  }
+
+  return `http://localhost:${process.env.PORT || 3000}`
+}
+
+const APP_BASE_URL = resolveAppBaseUrl(args.baseUrl)
 
 if (args.help) {
   console.log(
@@ -99,6 +135,9 @@ if (args.help) {
       '  --category <id>    restrict to one category',
       '  --limit <n>        stop after n projects',
       '  --urls <file>      use a text file of URLs instead of the app queue',
+      '  --base-url <url>   target app, e.g. https://your-app.vercel.app',
+      '                     (defaults to APP_BASE_URL, then the Vercel domain,',
+      '                     then http://localhost:3000)',
     ].join('\n'),
   )
   process.exit(0)
@@ -205,6 +244,7 @@ async function main() {
   }
 
   console.log(`\n${queue.length} project(s) to visit.`)
+  console.log(`App: ${APP_BASE_URL}`)
   console.log(`Chrome profile: ${PROFILE_DIR}${PROFILE_NAME ? ` (${PROFILE_NAME})` : ''}`)
 
   if (usingRealProfile) {

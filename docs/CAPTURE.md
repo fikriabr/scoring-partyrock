@@ -87,7 +87,15 @@ Dua sumber, digabung:
 
    ```
    CAPTURE_TOKEN="<random hex>"
-   APP_BASE_URL="http://localhost:3000"
+   ```
+
+   `APP_BASE_URL` tidak wajib. Kalau kosong, script memakai domain Vercel
+   (`VERCEL_PROJECT_PRODUCTION_URL` / `VERCEL_URL`) bila variabelnya ada di
+   lingkungan, dan kalau tidak ada jatuh ke `http://localhost:3000`. Untuk
+   menargetkan app yang sudah dideploy tanpa mengubah `.env`:
+
+   ```bash
+   npm run capture -- --base-url https://nama-app.vercel.app
    ```
 
 2. Jalankan app:

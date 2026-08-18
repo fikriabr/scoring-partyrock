@@ -17,6 +17,28 @@ export const ADMIN_PATHS = [
 
 export type Role = 'ADMIN' | 'JURY'
 
+/**
+ * The landing page each role is sent to after signing in.
+ *
+ * A jury has no access to `/admin` — the proxy answers those paths with 403 —
+ * so the post-login destination has to follow the role rather than being
+ * hardcoded. Every value here must be a path `checkAccess` allows for its own
+ * role; the property tests assert exactly that.
+ */
+export const ROLE_HOME: Record<Role, string> = {
+  ADMIN: '/admin',
+  JURY: '/jury/projects',
+}
+
+/**
+ * Landing path for `role`, or `/login` when the role is missing or unknown
+ * (e.g. a stale token issued before a role was renamed).
+ */
+export function homePathForRole(role: Role | null | undefined): string {
+  if (!role) return '/login'
+  return ROLE_HOME[role] ?? '/login'
+}
+
 export type AccessDecision =
   | { allowed: true }
   | { allowed: false; reason: 'unauthenticated' }
