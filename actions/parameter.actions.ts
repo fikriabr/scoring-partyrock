@@ -5,7 +5,12 @@
 'use server'
 
 import { auth } from '@/lib/auth/config'
-import { loadDefaultParameters } from '@/lib/services/category.service'
+import {
+  DEFAULT_PARAMETER_SET_NAMES,
+  isDefaultParameterSet,
+  loadDefaultParameters,
+  type DefaultParameterSet,
+} from '@/lib/services/category.service'
 import { saveParameterSet } from '@/lib/services/parameter.service'
 import { revalidatePath } from 'next/cache'
 
@@ -16,19 +21,30 @@ export type ActionResult = {
 
 // -----------------------------------------------------------------------
 // loadDefaultParametersAction
-// Seeds the category with 5 default parameters totalling 100% weight.
-// Requirements: 2.4
+// Seeds the category with the chosen default parameter set (5 parameters
+// totalling 100% weight). Defaults to PARTYROCK so existing callers are
+// unaffected.
+// Requirements: 2.4, 6.1, 6.3, 6.4
 // -----------------------------------------------------------------------
 export async function loadDefaultParametersAction(
   categoryId: string,
+  set: DefaultParameterSet = 'PARTYROCK',
 ): Promise<ActionResult> {
   const session = await auth()
   if (!session || session.user.role !== 'ADMIN') {
     return { success: false, message: 'Forbidden: Admin access required' }
   }
 
+  // The value comes from the client, so it is validated rather than trusted.
+  if (!isDefaultParameterSet(set)) {
+    return {
+      success: false,
+      message: `Unknown default parameter set "${String(set)}". Expected one of: ${DEFAULT_PARAMETER_SET_NAMES.join(', ')}.`,
+    }
+  }
+
   try {
-    await loadDefaultParameters(categoryId)
+    await loadDefaultParameters(categoryId, set)
     revalidatePath(`/admin/categories/${categoryId}/parameters`)
     return { success: true }
   } catch (error) {

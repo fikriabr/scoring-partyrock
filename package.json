@@ -1,7 +1,7 @@
 {
-  "name": "scoring-partyrock",
+  "name": "scoring-project-pindai",
   "version": "1.0.0",
-  "description": "",
+  "description": "Scoring Project by PindAI — aplikasi penilaian kompetisi project dengan AI dan review juri",
   "type": "module",
   "main": "index.js",
   "scripts": {
@@ -38,6 +38,7 @@
     "lru-cache": "^11.5.2",
     "next": "^16.3.0",
     "next-auth": "^5.0.0-beta.32",
+    "node-html-parser": "9.0.3",
     "postcss": "^8.5.26",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

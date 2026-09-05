@@ -4,6 +4,10 @@
 // Requirements: 1.3, 1.4, 1.5, 2.4, 8.5
 
 import { db } from '@/lib/db'
+import {
+  getDefaultParameterSet,
+  type DefaultParameterSet,
+} from '@/lib/default-parameter-sets'
 import { CategorySchema, type CategoryInput } from '@/lib/validators/schemas'
 import { Prisma } from '@prisma/client'
 import { randomUUID } from 'crypto'
@@ -137,58 +141,40 @@ export async function publishCategory(id: string) {
 }
 
 // -----------------------------------------------------------------------
-// loadDefaultParameters
-// Seeds the category with 5 default parameters totalling 100% weight.
-// Requirements: 2.4
+// Default parameter sets
+// The templates themselves live in `lib/default-parameter-sets.ts`, a module
+// free of `@/lib/db` and of value imports from `@prisma/client`, so the client
+// component that renders the template selector can read them without pulling
+// the database client into the browser bundle. Re-exported here so existing
+// call sites and tests keep importing from this service.
+// Requirements: 6.1, 6.2, 6.3, 6.4
 // -----------------------------------------------------------------------
-export async function loadDefaultParameters(categoryId: string) {
-  const defaults = [
-    {
-      name: 'Creativity & Originality',
-      description: 'How creative and original is the application compared to others?',
-      weight: 20,
-      minScore: 0,
-      maxScore: 100,
-      scoringMode: 'AUTO' as const,
-      orderIndex: 0,
-    },
-    {
-      name: 'Problem-Solution Fit',
-      description: 'How well does the application address a real problem?',
-      weight: 25,
-      minScore: 0,
-      maxScore: 100,
-      scoringMode: 'AUTO' as const,
-      orderIndex: 1,
-    },
-    {
-      name: 'Effective Use of PartyRock Features',
-      description: 'How effectively does the application leverage PartyRock widgets?',
-      weight: 20,
-      minScore: 0,
-      maxScore: 100,
-      scoringMode: 'AUTO' as const,
-      orderIndex: 2,
-    },
-    {
-      name: 'User Experience & Presentation',
-      description: 'How clear and compelling is the application presentation?',
-      weight: 20,
-      minScore: 0,
-      maxScore: 100,
-      scoringMode: 'AUTO' as const,
-      orderIndex: 3,
-    },
-    {
-      name: 'Impact & Scalability',
-      description: 'What is the potential impact and scalability of the application?',
-      weight: 15,
-      minScore: 0,
-      maxScore: 100,
-      scoringMode: 'AUTO' as const,
-      orderIndex: 4,
-    },
-  ]
+export type {
+  DefaultParameterSet,
+  DefaultParameterTemplate,
+} from '@/lib/default-parameter-sets'
+
+export {
+  DEFAULT_PARAMETER_SETS,
+  DEFAULT_PARAMETER_SET_NAMES,
+  DEFAULT_PARAMETER_SET_LABELS,
+  DEFAULT_PARAMETER_SET_ORDER,
+  getDefaultParameterSet,
+  isDefaultParameterSet,
+} from '@/lib/default-parameter-sets'
+
+// -----------------------------------------------------------------------
+// loadDefaultParameters
+// Seeds the category with the chosen default parameter set (5 parameters
+// totalling 100% weight). Defaults to PARTYROCK so existing callers keep
+// their current behaviour.
+// Requirements: 2.4, 6.1, 6.2, 6.4
+// -----------------------------------------------------------------------
+export async function loadDefaultParameters(
+  categoryId: string,
+  set: DefaultParameterSet = 'PARTYROCK',
+) {
+  const defaults = getDefaultParameterSet(set)
 
   return db.parameter.createMany({
     data: defaults.map((p) => ({ ...p, categoryId })),

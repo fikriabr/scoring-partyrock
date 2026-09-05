@@ -56,14 +56,14 @@ sedang dipakai manusia.
 
 ## Komponen
 
-| File                                    | Peran                                                        |
-| --------------------------------------- | ------------------------------------------------------------ |
-| `public/partyrock-capture.js`           | Jalan di dalam halaman PartyRock; kumpulkan widget/prompt/output |
-| `scripts/partyrock-navigate.js`        | Buka Chrome asli, kunjungi tiap URL, inject script, kirim hasil |
-| `app/api/capture/route.ts`              | `POST` — terima capture, simpan, trigger AI scoring           |
-| `app/api/capture/queue/route.ts`        | `GET` — daftar project yang belum punya data widget           |
-| `lib/services/capture.service.ts`       | Cocokkan URL ke project, simpan metadata, susun `sourceCode`  |
-| `components/CaptureImportPanel.tsx`     | Fallback manual per project di halaman admin                  |
+| File                                | Peran                                                            |
+| ----------------------------------- | ---------------------------------------------------------------- |
+| `public/partyrock-capture.js`       | Jalan di dalam halaman PartyRock; kumpulkan widget/prompt/output |
+| `scripts/partyrock-navigate.js`     | Buka Chrome asli, kunjungi tiap URL, inject script, kirim hasil  |
+| `app/api/capture/route.ts`          | `POST` — terima capture, simpan, trigger AI scoring              |
+| `app/api/capture/queue/route.ts`    | `GET` — daftar project yang belum punya data widget              |
+| `lib/services/capture.service.ts`   | Cocokkan URL ke project, simpan metadata, susun `sourceCode`     |
+| `components/CaptureImportPanel.tsx` | Fallback manual per project di halaman admin                     |
 
 ### Cara script capture mengambil data
 
@@ -71,7 +71,7 @@ Dua sumber, digabung:
 
 1. **Network** (utama) — `fetch` dan `XMLHttpRequest` di-wrap sebelum script
    halaman jalan, jadi JSON definisi app tertangkap saat halaman memuat
-   dirinya sendiri. Ekstraksi memakai *bentuk* objek (ada field type + label,
+   dirinya sendiri. Ekstraksi memakai _bentuk_ objek (ada field type + label,
    atau key yang cocok `/prompt|template|instruction/`), bukan path field
    hardcoded — supaya tidak langsung rusak kalau Amazon ganti nama field.
 2. **DOM** (cadangan) — textarea, `contenteditable`, teks yang mengandung
@@ -134,11 +134,39 @@ definisi app — tunggu sebentar lalu klik **Pindai Ulang**.
 ### Opsi
 
 ```bash
+npm run capture -- --url <url>        # satu project saja, lihat di bawah
 npm run capture -- --all              # termasuk yang sudah pernah di-capture
 npm run capture -- --category <id>    # satu kategori saja
 npm run capture -- --limit 10         # 10 project pertama
 npm run capture -- --urls list.txt    # dari file URL, bukan dari antrian app
 ```
+
+### Satu project saja: `--url`
+
+```bash
+npm run capture -- --url https://partyrock.aws/u/Addim/heN4dUfbn/Nama-App
+```
+
+Bedanya dengan `--urls`: `--url` **mencocokkan URL itu ke submission di database
+dulu**, bukan memakainya mentah. Konsekuensinya:
+
+- URL yang belum pernah disubmit langsung ditolak **sebelum Chrome terbuka**,
+  lengkap dengan jumlah submission yang ada. Tanpa ini, ketidakcocokan baru
+  ketahuan setelah kamu selesai mengklik semua widget dan capture-nya ditolak
+  `NO_MATCHING_PROJECT` — kerja yang terbuang.
+- Nama peserta dan kategori yang sebenarnya ikut tampil di terminal, bukan
+  `(from file)`.
+- Pencocokan dua tahap sama seperti di server: URL ternormalisasi dulu, lalu
+  **app id**. Jadi app yang sudah di-rename peserta tetap ketemu, dan terminal
+  memberi tahu `Matched by app id` kalau itu yang terjadi.
+- Antrian diambil dengan cakupan `--all`, jadi project yang **sudah** punya data
+  widget tetap bisa dituju. Ini memang tujuan `--url`: mengulang satu project.
+- Kalau app yang sama disubmit ke beberapa kategori, tetap satu tab yang terbuka
+  dan capture-nya tersimpan ke semua kategori itu — jumlahnya diberitahukan di
+  terminal.
+
+`--url` bisa dipersempit dengan `--category <id>` kalau ada URL kembar di
+kategori berbeda dan kamu hanya mau satu.
 
 ### Memakai profil Chrome sendiri
 
@@ -195,7 +223,12 @@ Karena itu Cara A lebih disarankan untuk pemakaian rutin.
 
 ---
 
-## Fallback: satu project saja
+## Fallback: satu project tanpa Playwright
+
+Kalau yang dibutuhkan hanya satu project, `npm run capture -- --url <url>` di
+atas sudah cukup. Jalur di bawah ini untuk kondisi Playwright/Chrome otomatis
+tidak bisa dipakai sama sekali — misalnya Chrome tidak mau dikemudikan, atau
+kamu sedang di mesin lain.
 
 Buka **Admin → Submissions → View** pada sebuah project, lalu pakai panel
 **Import Capture Manual**:

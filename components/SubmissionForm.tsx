@@ -1,12 +1,25 @@
 // components/SubmissionForm.tsx
 // Client component for single project submission and CSV bulk upload.
 // Also provides retry crawl/score buttons for inline actions.
-// Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 4.3, 4.4
+// Requirements: 1.3, 1.4, 2.4, 3.1, 3.2, 3.3, 3.4, 3.5, 4.3, 4.4
 
 'use client'
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
+// Same rule module the server-side schemas use, so client and server can never
+// drift apart. Requirements: 2.5
+import { validateProjectUrl } from '@/lib/validators/url-rules'
+// Prisma-free module, so the shared limit can be read without pulling the
+// Prisma runtime (which `@/lib/validators/schemas` does) into the bundle.
+// Requirements: 5.3
+import { MAX_SOURCE_CODE_LENGTH } from '@/lib/validators/source-code-rules'
+// Display labels shared with the submissions list and the project detail page,
+// so one project type never shows up under two different names.
+// Requirements: 1.7
+import { PROJECT_TYPE_LABELS, PROJECT_TYPE_ORDER } from '@/lib/project-type'
+// Type-only import: the Prisma runtime never reaches the client bundle.
+import type { ProjectType } from '@prisma/client'
 
 interface Category {
   id: string
@@ -15,21 +28,56 @@ interface Category {
 }
 
 // Field limits mirrored from lib/validators/schemas.ts (SubmissionSchema),
-// which in turn mirrors the Project table on Neon PostgreSQL.
+// which in turn mirrors the Project table on Neon PostgreSQL. The Source Code
+// limit is no longer mirrored by hand: it is imported below from the same
+// Prisma-free module the schemas read it from.
 const MAX_NAME_LENGTH = 255
-const MAX_SOURCE_CODE_LENGTH = 100_000
 
-/** Same partyrock.aws host rule the server-side SubmissionSchema enforces. */
-function isPartyRockUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url)
-    return (
-      parsed.hostname === 'partyrock.aws' ||
-      parsed.hostname.endsWith('.partyrock.aws')
-    )
-  } catch {
-    return false
+/**
+ * Every piece of user-facing copy that depends on the selected project type,
+ * collected in one place so the JSX below stays free of scattered ternaries.
+ * Adding a project type to the Prisma enum makes this map fail to typecheck,
+ * which is the point — the copy is not allowed to silently fall behind.
+ *
+ * The type's own name is not here: it comes from `PROJECT_TYPE_LABELS` in
+ * `@/lib/project-type`, which the submissions list and the detail page read
+ * too.
+ *
+ * Requirements: 1.3, 1.4, 2.4
+ */
+const PROJECT_TYPE_COPY: Record<
+  ProjectType,
+  {
+    urlLabel: string
+    urlPlaceholder: string
+    urlHelp: string
+    sourceCodePlaceholder: string
+    sourceCodeHelp: string
+    successMessage: string
   }
+> = {
+  PARTYROCK: {
+    urlLabel: 'PartyRock URL',
+    urlPlaceholder: 'https://partyrock.aws/u/...',
+    urlHelp: 'Must be a partyrock.aws URL',
+    sourceCodePlaceholder:
+      "Paste the app's widget configuration / prompts / source here...",
+    sourceCodeHelp:
+      'The AI scorer treats this as its primary evidence. Leave blank to fill it in later via the capture pipeline.',
+    // PARTYROCK submissions go straight to scoring — no crawl step.
+    successMessage: 'Project submitted successfully. AI scoring started.',
+  },
+  HTML: {
+    urlLabel: 'Project URL',
+    urlPlaceholder: 'https://example.com/my-project',
+    urlHelp: 'Any hostname is accepted, as long as the URL uses http or https.',
+    sourceCodePlaceholder: "Paste the page's HTML markup here...",
+    sourceCodeHelp:
+      "The AI scorer derives the page's HTML structure from this. Leave blank to let the crawler fetch the markup from the URL instead.",
+    // HTML submissions are crawled first, and scoring follows the crawl.
+    successMessage:
+      'Project submitted successfully. Fetching the page, then AI scoring starts.',
+  },
 }
 
 interface SubmissionFormProps {
@@ -85,7 +133,9 @@ export default function SubmissionForm({ categories }: SubmissionFormProps) {
 
 // -----------------------------------------------------------------------
 // SingleSubmissionForm
-// Form for submitting a single PartyRock URL
+// Form for submitting a single project URL. The project type is picked first
+// because it decides which URL rule and which field copy apply below.
+// Requirements: 1.3, 1.4, 2.4, 2.5
 // -----------------------------------------------------------------------
 function SingleSubmissionForm({
   categories,
@@ -99,6 +149,11 @@ function SingleSubmissionForm({
   const [globalError, setGlobalError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [sourceCodeLength, setSourceCodeLength] = useState(0)
+  // Controlled, because the copy and validation of the fields below read from
+  // it. Defaults to PARTYROCK to match the Prisma column default.
+  const [projectType, setProjectType] = useState<ProjectType>('PARTYROCK')
+
+  const copy = PROJECT_TYPE_COPY[projectType]
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -114,6 +169,7 @@ function SingleSubmissionForm({
     // sourceCode, categoryId). Empty optional fields are sent as undefined so
     // the service writes SQL NULL rather than an empty string.
     const payload = {
+      projectType,
       url: (formData.get('url') as string).trim(),
       participantName: (formData.get('participantName') as string).trim(),
       teamName: (formData.get('teamName') as string).trim() || undefined,
@@ -126,9 +182,11 @@ function SingleSubmissionForm({
     const fieldErrors: Record<string, string> = {}
     if (!payload.url) {
       fieldErrors.url = 'URL is required'
-    } else if (!isPartyRockUrl(payload.url)) {
-      fieldErrors.url =
-        'URL must be a valid PartyRock URL (domain: partyrock.aws)'
+    } else {
+      // Same rule, same argument the server gets — so the single submission
+      // route, the CSV import, and this form always agree. Requirements: 2.5
+      const urlCheck = validateProjectUrl(payload.url, payload.projectType)
+      if (!urlCheck.ok) fieldErrors.url = urlCheck.message
     }
     if (!payload.participantName) {
       fieldErrors.participantName = 'Participant name is required'
@@ -138,7 +196,10 @@ function SingleSubmissionForm({
     if (payload.teamName && payload.teamName.length > MAX_NAME_LENGTH) {
       fieldErrors.teamName = `Team name must not exceed ${MAX_NAME_LENGTH} characters`
     }
-    if (payload.sourceCode && payload.sourceCode.length > MAX_SOURCE_CODE_LENGTH) {
+    if (
+      payload.sourceCode &&
+      payload.sourceCode.length > MAX_SOURCE_CODE_LENGTH
+    ) {
       fieldErrors.sourceCode = `Source code must not exceed ${MAX_SOURCE_CODE_LENGTH.toLocaleString()} characters`
     }
     if (!payload.categoryId) fieldErrors.categoryId = 'Category is required'
@@ -170,7 +231,7 @@ function SingleSubmissionForm({
           return
         }
 
-        setSuccessMessage('Project submitted successfully. AI scoring started.')
+        setSuccessMessage(copy.successMessage)
         form.reset()
         setSourceCodeLength(0)
         onSuccess()
@@ -221,19 +282,48 @@ function SingleSubmissionForm({
         )}
       </div>
 
+      {/* Project Type select — placed before the URL field because it decides
+          which validation rule and which copy the fields below use.
+          Requirements: 1.3, 1.4 */}
+      <div>
+        <label
+          htmlFor="projectType"
+          className="block text-sm font-medium text-gray-700 mb-1.5"
+        >
+          Project Type <span className="text-red-500">*</span>
+        </label>
+        <select
+          id="projectType"
+          name="projectType"
+          value={projectType}
+          onChange={(e) => setProjectType(e.target.value as ProjectType)}
+          required
+          className="w-full px-3 py-2.5 rounded-lg border border-gray-200 bg-gray-50 text-sm transition-colors focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+        >
+          {PROJECT_TYPE_ORDER.map((type) => (
+            <option key={type} value={type}>
+              {PROJECT_TYPE_LABELS[type]}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1.5 text-xs text-gray-400">
+          Decides how the URL is validated and how the project is scored.
+        </p>
+      </div>
+
       {/* URL field */}
       <div>
         <label
           htmlFor="url"
           className="block text-sm font-medium text-gray-700 mb-1.5"
         >
-          PartyRock URL <span className="text-red-500">*</span>
+          {copy.urlLabel} <span className="text-red-500">*</span>
         </label>
         <input
           id="url"
           name="url"
           type="url"
-          placeholder="https://partyrock.aws/u/..."
+          placeholder={copy.urlPlaceholder}
           required
           className={`w-full px-3 py-2.5 rounded-lg border bg-gray-50 text-sm transition-colors focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 ${
             errors.url ? 'border-red-400' : 'border-gray-200'
@@ -242,9 +332,7 @@ function SingleSubmissionForm({
         {errors.url && (
           <p className="mt-1.5 text-sm text-red-600">{errors.url}</p>
         )}
-        <p className="mt-1.5 text-xs text-gray-400">
-          Must be a partyrock.aws URL
-        </p>
+        <p className="mt-1.5 text-xs text-gray-400">{copy.urlHelp}</p>
       </div>
 
       {/* Participant Name field */}
@@ -307,7 +395,7 @@ function SingleSubmissionForm({
           name="sourceCode"
           rows={8}
           maxLength={MAX_SOURCE_CODE_LENGTH}
-          placeholder="Paste the app's widget configuration / prompts / source here..."
+          placeholder={copy.sourceCodePlaceholder}
           onChange={(e) => setSourceCodeLength(e.target.value.length)}
           className={`w-full px-3 py-2.5 rounded-lg border bg-gray-50 font-mono text-xs transition-colors focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 ${
             errors.sourceCode ? 'border-red-400' : 'border-gray-200'
@@ -317,10 +405,7 @@ function SingleSubmissionForm({
           <p className="mt-1.5 text-sm text-red-600">{errors.sourceCode}</p>
         )}
         <div className="mt-1.5 flex justify-between gap-4 text-xs text-gray-400">
-          <p>
-            The AI scorer treats this as its primary evidence. Leave blank to
-            fill it in later via the capture pipeline.
-          </p>
+          <p>{copy.sourceCodeHelp}</p>
           <p className="shrink-0 tabular-nums">
             {sourceCodeLength.toLocaleString()} /{' '}
             {MAX_SOURCE_CODE_LENGTH.toLocaleString()}
@@ -457,8 +542,11 @@ function CsvUploadForm({
         <p className="mt-1.5 text-xs text-gray-400">
           CSV columns: <code>url</code>, <code>participant_name</code>,{' '}
           <code>team_name</code> (optional), <code>source_code</code>{' '}
-          (optional). Header casing and spacing don&apos;t matter, and{' '}
-          <code>,</code> <code>;</code> or tab separated files all work.
+          (optional), <code>project_type</code> (optional —{' '}
+          <code>PARTYROCK</code> or <code>HTML</code>, defaults to{' '}
+          <code>PARTYROCK</code> when the column or cell is empty). Header
+          casing and spacing don&apos;t matter, and <code>,</code>{' '}
+          <code>;</code> or tab separated files all work.
         </p>
       </div>
 

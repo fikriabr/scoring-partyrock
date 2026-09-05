@@ -52,45 +52,58 @@ export default async function AdminEventsPage() {
         /* Events grid */
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {events.map((event) => (
-            <Link
+            <div
               key={event.id}
-              href={`/admin/events/${event.id}`}
-              className="group block rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-100 transition-all hover:shadow-md hover:ring-gray-200"
+              className="group rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-100 transition-all hover:shadow-md hover:ring-gray-200"
             >
-              <div className="flex items-start justify-between gap-3">
-                <h2 className="text-base font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
-                  {event.name}
-                </h2>
-                <span className="shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5">
-                  →
-                </span>
-              </div>
-
-              {event.description && (
-                <p className="mt-2 line-clamp-2 text-sm text-gray-500">
-                  {event.description}
-                </p>
-              )}
-
-              <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 border-t border-gray-50 pt-3 text-xs text-gray-400">
-                {event.startDate && (
-                  <span className="flex items-center gap-1">
-                    <span>📆</span>
-                    {new Date(event.startDate).toLocaleDateString('id-ID')}
+              {/* Main card body links to the event detail page */}
+              <Link href={`/admin/events/${event.id}`} className="block">
+                <div className="flex items-start justify-between gap-3">
+                  <h2 className="text-base font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
+                    {event.name}
+                  </h2>
+                  <span className="shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5">
+                    →
                   </span>
+                </div>
+
+                {event.description && (
+                  <p className="mt-2 line-clamp-2 text-sm text-gray-500">
+                    {event.description}
+                  </p>
                 )}
-                {event.endDate && (
+              </Link>
+
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-gray-50 pt-3 text-xs text-gray-400">
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  {event.startDate && (
+                    <span className="flex items-center gap-1">
+                      <span>📆</span>
+                      {new Date(event.startDate).toLocaleDateString('id-ID')}
+                    </span>
+                  )}
+                  {event.endDate && (
+                    <span className="flex items-center gap-1">
+                      <span>🏁</span>
+                      {new Date(event.endDate).toLocaleDateString('id-ID')}
+                    </span>
+                  )}
                   <span className="flex items-center gap-1">
-                    <span>🏁</span>
-                    {new Date(event.endDate).toLocaleDateString('id-ID')}
+                    <span>🕐</span>
+                    {new Date(event.createdAt).toLocaleDateString('id-ID')}
                   </span>
-                )}
-                <span className="flex items-center gap-1">
-                  <span>🕐</span>
-                  {new Date(event.createdAt).toLocaleDateString('id-ID')}
-                </span>
+                </div>
+
+                {/* Edit link — kept outside the card Link to avoid nested anchors */}
+                <Link
+                  href={`/admin/events/${event.id}/edit`}
+                  className="inline-flex items-center gap-1 font-medium text-gray-500 transition-colors hover:text-blue-600"
+                >
+                  <span>✏️</span>
+                  Edit
+                </Link>
               </div>
-            </Link>
+            </div>
           ))}
         </div>
       )}

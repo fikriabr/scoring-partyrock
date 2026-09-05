@@ -1,10 +1,10 @@
-# Scoring PartyRock
+# Scoring Project by PindAI
 
-Aplikasi penilaian kompetisi untuk app yang dibuat peserta di
-[AWS PartyRock](https://partyrock.aws). Peserta mengumpulkan URL app-nya, sistem
-mengambil struktur app tersebut (widget + prompt), lalu menilainya dengan AI per
-parameter berbobot. Juri manusia bisa meninjau atau menimpa skor AI sebelum
-leaderboard dipublikasikan.
+Aplikasi penilaian kompetisi untuk project yang dikumpulkan peserta. Sumber
+project yang didukung saat ini adalah app [AWS PartyRock](https://partyrock.aws):
+peserta mengumpulkan URL app-nya, sistem mengambil struktur app tersebut
+(widget + prompt), lalu menilainya dengan AI per parameter berbobot. Juri manusia
+bisa meninjau atau menimpa skor AI sebelum leaderboard dipublikasikan.
 
 ## Daftar isi
 
@@ -90,14 +90,14 @@ Salin `.env.example` menjadi `.env`, lalu isi nilainya:
 cp .env.example .env
 ```
 
-| Variabel                          | Keterangan                                                      |
-| --------------------------------- | --------------------------------------------------------------- |
-| `DATABASE_URL`                    | Connection string Neon, sertakan `?sslmode=require`              |
-| `AUTH_SECRET` / `NEXTAUTH_SECRET` | Isi sama, hasil `openssl rand -base64 32`                        |
-| `GEMINI_API_KEY`                  | API key Google AI Studio                                         |
-| `GEMINI_MODEL_ID`                 | Default `gemini-flash-lite-latest`                               |
-| `CAPTURE_TOKEN`                   | Secret bersama untuk endpoint capture, `openssl rand -hex 24`    |
-| `APP_BASE_URL`                    | Opsional — alamat aplikasi yang dituju script capture, lihat di bawah |
+| Variabel                          | Keterangan                                                             |
+| --------------------------------- | ---------------------------------------------------------------------- |
+| `DATABASE_URL`                    | Connection string Neon, sertakan `?sslmode=require`                    |
+| `AUTH_SECRET` / `NEXTAUTH_SECRET` | Isi sama, hasil `openssl rand -base64 32`                              |
+| `GEMINI_API_KEY`                  | API key Google AI Studio                                               |
+| `GEMINI_MODEL_ID`                 | Default `gemini-flash-lite-latest`                                     |
+| `CAPTURE_TOKEN`                   | Secret bersama untuk endpoint capture, `openssl rand -hex 24`          |
+| `APP_BASE_URL`                    | Opsional — alamat aplikasi yang dituju script capture, lihat di bawah  |
 | `PR_CHROME_PROFILE`               | Opsional, **lokal saja** — lihat [Pipeline capture](#pipeline-capture) |
 
 Dorong skema ke database dan buat akun admin pertama:
@@ -119,22 +119,22 @@ Buka http://localhost:3000 lalu login.
 
 ## Perintah npm
 
-| Perintah                        | Fungsi                                                      |
-| ------------------------------- | ----------------------------------------------------------- |
-| `npm run dev`                   | Dev server                                                   |
-| `npm run build` / `start`       | Build dan jalankan production                                |
-| `npm run typecheck`             | `tsc --noEmit`                                               |
-| `npm run lint`                  | ESLint                                                       |
-| `npm test`                      | Seluruh test suite                                           |
-| `npm run test:watch`            | Test mode watch                                              |
-| `npm run test:coverage`         | Test dengan laporan coverage                                 |
-| `npm run db:push`               | Sinkronkan skema Prisma ke database (tanpa file migration)   |
-| `npm run db:migrate`            | Buat dan jalankan migration                                  |
-| `npm run db:studio`             | Prisma Studio                                                |
-| `npm run db:generate`           | Generate Prisma Client (otomatis lewat `postinstall`)        |
-| `npm run seed:admin`            | Buat akun admin awal                                         |
-| `npm run capture`               | Jalankan navigator capture — **lokal saja**                  |
-| `npm run capture:clone-profile` | Salin sesi Chrome ke profil capture — **lokal saja**         |
+| Perintah                        | Fungsi                                                     |
+| ------------------------------- | ---------------------------------------------------------- |
+| `npm run dev`                   | Dev server                                                 |
+| `npm run build` / `start`       | Build dan jalankan production                              |
+| `npm run typecheck`             | `tsc --noEmit`                                             |
+| `npm run lint`                  | ESLint                                                     |
+| `npm test`                      | Seluruh test suite                                         |
+| `npm run test:watch`            | Test mode watch                                            |
+| `npm run test:coverage`         | Test dengan laporan coverage                               |
+| `npm run db:push`               | Sinkronkan skema Prisma ke database (tanpa file migration) |
+| `npm run db:migrate`            | Buat dan jalankan migration                                |
+| `npm run db:studio`             | Prisma Studio                                              |
+| `npm run db:generate`           | Generate Prisma Client (otomatis lewat `postinstall`)      |
+| `npm run seed:admin`            | Buat akun admin awal                                       |
+| `npm run capture`               | Jalankan navigator capture — **lokal saja**                |
+| `npm run capture:clone-profile` | Salin sesi Chrome ke profil capture — **lokal saja**       |
 
 ## Model data
 
@@ -167,9 +167,9 @@ Dua peran: `ADMIN` dan `JURY`. Penjagaannya ada di [proxy.ts](proxy.ts) yang
 memanggil fungsi murni `checkAccess` di [lib/auth/rbac.ts](lib/auth/rbac.ts),
 supaya logika akses bisa dites terpisah dari internal Next.js.
 
-| Peran   | Akses                                                                                                  |
-| ------- | ------------------------------------------------------------------------------------------------------ |
-| `ADMIN` | Semua halaman dan API                                                                                  |
+| Peran   | Akses                                                                                                   |
+| ------- | ------------------------------------------------------------------------------------------------------- |
+| `ADMIN` | Semua halaman dan API                                                                                   |
 | `JURY`  | Semua kecuali prefix admin: `/admin`, `/api/events`, `/api/categories`, `/api/parameters`, `/api/users` |
 
 Juri juga dibatasi di lapisan data: hanya bisa melihat dan menilai project di
@@ -198,6 +198,12 @@ arahkan ke aplikasi yang sudah dideploy lewat `--base-url`:
 
 ```bash
 npm run capture -- --base-url https://nama-app.vercel.app
+```
+
+Untuk satu project saja, pakai `--url`:
+
+```bash
+npm run capture -- --url https://partyrock.aws/u/user/appid/Nama-App
 ```
 
 Tanpa flag itu, script memakai `APP_BASE_URL` bila diisi, lalu domain Vercel

@@ -25,6 +25,7 @@
  * Usage
  * -----
  *   npm run capture                      # every project still missing widgets
+ *   npm run capture -- --url <url>       # exactly one submitted project
  *   npm run capture -- --all             # including already-captured ones
  *   npm run capture -- --category <id>   # one category only
  *   npm run capture -- --limit 10        # first 10 of the queue
@@ -78,13 +79,27 @@ const usingRealProfile = PROFILE_DIR !== DEFAULT_PROFILE_DIR
 // ---------------------------------------------------------------------------
 
 function parseArgs(argv) {
-  const args = { all: false, category: null, limit: null, urls: null, baseUrl: null }
+  const args = {
+    all: false,
+    category: null,
+    limit: null,
+    url: null,
+    urlGiven: false,
+    urls: null,
+    baseUrl: null,
+  }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--all') args.all = true
     else if (arg === '--category') args.category = argv[++i]
     else if (arg === '--limit') args.limit = Number(argv[++i])
-    else if (arg === '--urls') args.urls = argv[++i]
+    // Presence is tracked separately from the value: `--url` with an empty or
+    // missing value must fail loudly, not fall through to the full queue and
+    // silently open every project.
+    else if (arg === '--url') {
+      args.urlGiven = true
+      args.url = argv[++i] ?? ''
+    } else if (arg === '--urls') args.urls = argv[++i]
     else if (arg === '--base-url') args.baseUrl = argv[++i]
     else if (arg === '--help' || arg === '-h') args.help = true
   }
@@ -118,7 +133,9 @@ function resolveAppBaseUrl(override) {
   ).trim()
   if (vercelHost) {
     // Vercel exposes these as bare hostnames, without a scheme.
-    return /^https?:\/\//.test(vercelHost) ? vercelHost.replace(/\/+$/, '') : `https://${vercelHost}`
+    return /^https?:\/\//.test(vercelHost)
+      ? vercelHost.replace(/\/+$/, '')
+      : `https://${vercelHost}`
   }
 
   return `http://localhost:${process.env.PORT || 3000}`
@@ -131,6 +148,9 @@ if (args.help) {
     [
       'Usage: npm run capture -- [options]',
       '',
+      '  --url <url>        capture exactly one submitted project by its URL',
+      '                     (resolved against the queue, so a URL that was',
+      '                     never submitted fails before Chrome opens)',
       '  --all              include projects that already have captured widgets',
       '  --category <id>    restrict to one category',
       '  --limit <n>        stop after n projects',
@@ -168,25 +188,130 @@ async function isChromeRunning() {
   })
 }
 
-/** Read the queue from the running app, or from a plain URL file. */
-async function loadQueue() {
-  if (args.urls) {
-    const raw = await readFile(path.resolve(process.cwd(), args.urls), 'utf8')
-    const urls = raw
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line && !line.startsWith('#'))
-    return urls.map((url) => ({ url, participantName: '(from file)', categoryName: '—' }))
+/**
+ * Comparable identities for one PartyRock URL.
+ *
+ * Mirrors `normalizeUrl` and `extractAppId` in lib/services/capture.service.ts.
+ * The logic is duplicated rather than imported because that module is
+ * TypeScript and pulls in the Prisma client, neither of which this plain-Node
+ * script can load. Keep the two in step if the matching rules change.
+ *
+ *   normalized  lowercase host, no query, no hash, no trailing slash
+ *   appId       the `{appId}` segment of /u/{user}/{appId}/{App-Name}, which
+ *               survives the participant renaming their app
+ */
+function urlMatchKeys(url) {
+  const trimmed = (url || '').trim()
+  let normalized = trimmed.replace(/\/+$/, '')
+  let appId = null
+
+  try {
+    const parsed = new URL(trimmed)
+    normalized = `${parsed.protocol}//${parsed.hostname.toLowerCase()}${parsed.pathname.replace(/\/+$/, '')}`
+
+    const segments = parsed.pathname.split('/').filter(Boolean)
+    const uIndex = segments.indexOf('u')
+    // Need at least `u/{user}/{appId}`
+    if (uIndex !== -1 && segments.length >= uIndex + 3)
+      appId = segments[uIndex + 2]
+  } catch {
+    // Not a parseable URL — fall back to the trimmed string for normalized.
   }
 
+  return { normalized, appId }
+}
+
+/**
+ * Build a one-item worklist for a single project, given its URL.
+ *
+ * Unlike `--urls`, this resolves the URL against the app's own queue instead
+ * of trusting it blindly. That matters because the capture is only accepted if
+ * the URL matches a submission: checking now turns a wasted session (open the
+ * app, click every widget, then get NO_MATCHING_PROJECT) into an error before
+ * Chrome even launches.
+ *
+ * Matching is the same two-pass rule the server uses — exact normalised URL
+ * first, then app id — so an app renamed on PartyRock still resolves.
+ */
+async function resolveSingleProject(rawUrl) {
+  const target = (rawUrl || '').trim()
+  if (!target) {
+    throw new Error(
+      '--url needs a PartyRock URL, e.g.\n  npm run capture -- --url https://partyrock.aws/u/user/appid/App-Name',
+    )
+  }
+
+  // `--all`: a targeted single capture is almost always a redo of an app that
+  // already has data, so the pending-only filter would hide the very project
+  // that was asked for.
+  const projects = await fetchQueue({ all: true, category: args.category })
+
+  const wanted = urlMatchKeys(target)
+  let matches = projects.filter(
+    (p) => urlMatchKeys(p.url).normalized === wanted.normalized,
+  )
+
+  if (matches.length === 0 && wanted.appId) {
+    matches = projects.filter((p) => urlMatchKeys(p.url).appId === wanted.appId)
+    if (matches.length > 0) {
+      console.log(
+        'Matched by app id — the submitted URL differs from the one given.',
+      )
+    }
+  }
+
+  if (matches.length === 0) {
+    throw new Error(
+      `No submission matches ${target}\n\n` +
+        'Capture is only stored against a URL that was already submitted.\n' +
+        'Submit it first in Admin → Submissions, or check for a typo.\n' +
+        `The app currently has ${projects.length} submission(s)` +
+        (args.category ? ' in that category.' : '.'),
+    )
+  }
+
+  const first = matches[0]
+
+  // The same app submitted to several categories should receive the capture in
+  // all of them. The server already fans out that way when no categoryId is
+  // given, so only pin the category when the match is unambiguous.
+  if (matches.length > 1) {
+    console.log(
+      `This app is submitted to ${matches.length} categories ` +
+        `(${matches.map((m) => m.categoryName).join(', ')}).\n` +
+        'One tab opens, and the capture is saved to all of them.',
+    )
+    return [
+      {
+        url: first.url,
+        participantName: first.participantName,
+        categoryName: `${matches.length} categories`,
+      },
+    ]
+  }
+
+  return [
+    {
+      url: first.url,
+      participantName: first.participantName,
+      categoryName: first.categoryName,
+      categoryId: first.categoryId,
+    },
+  ]
+}
+
+/** GET the project list from the running app. */
+async function fetchQueue({ all, category }) {
   const params = new URLSearchParams()
-  if (!args.all) params.set('pending', '1')
-  if (args.category) params.set('categoryId', args.category)
+  if (!all) params.set('pending', '1')
+  if (category) params.set('categoryId', category)
 
   const endpoint = `${APP_BASE_URL}/api/capture/queue?${params.toString()}`
   let response
   try {
-    response = await fetch(endpoint, { headers: { 'X-Capture-Token': CAPTURE_TOKEN } })
+    response = await fetch(endpoint, {
+      headers: { 'X-Capture-Token': CAPTURE_TOKEN },
+    })
   } catch (error) {
     throw new Error(
       `Could not reach ${endpoint}. Is the dev server running (npm run dev)?\n  ${error.message}`,
@@ -195,10 +320,32 @@ async function loadQueue() {
 
   const body = await response.json().catch(() => ({}))
   if (!response.ok) {
-    throw new Error(`Queue request failed (HTTP ${response.status}): ${body.message || ''}`)
+    throw new Error(
+      `Queue request failed (HTTP ${response.status}): ${body.message || ''}`,
+    )
   }
 
   return body.projects || []
+}
+
+/** Read the queue from the running app, or from a plain URL file. */
+async function loadQueue() {
+  if (args.urlGiven) return resolveSingleProject(args.url)
+
+  if (args.urls) {
+    const raw = await readFile(path.resolve(process.cwd(), args.urls), 'utf8')
+    const urls = raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith('#'))
+    return urls.map((url) => ({
+      url,
+      participantName: '(from file)',
+      categoryName: '—',
+    }))
+  }
+
+  return fetchQueue({ all: args.all, category: args.category })
 }
 
 /** POST one capture payload to the scoring app. */
@@ -224,7 +371,10 @@ async function main() {
     console.error(
       'CAPTURE_TOKEN is not set in .env.\n' +
         'Generate one and add it to both .env and your shell, e.g.\n' +
-        '  CAPTURE_TOKEN="' + Math.random().toString(36).slice(2) + Date.now().toString(36) + '"',
+        '  CAPTURE_TOKEN="' +
+        Math.random().toString(36).slice(2) +
+        Date.now().toString(36) +
+        '"',
     )
     process.exit(1)
   }
@@ -235,17 +385,22 @@ async function main() {
   }
 
   let queue = await loadQueue()
-  if (args.limit && Number.isFinite(args.limit)) queue = queue.slice(0, args.limit)
+  if (args.limit && Number.isFinite(args.limit))
+    queue = queue.slice(0, args.limit)
 
   if (queue.length === 0) {
     console.log('Nothing to capture — every project already has widget data.')
-    console.log('Run with --all to revisit projects that were already captured.')
+    console.log(
+      'Run with --all to revisit projects that were already captured.',
+    )
     return
   }
 
   console.log(`\n${queue.length} project(s) to visit.`)
   console.log(`App: ${APP_BASE_URL}`)
-  console.log(`Chrome profile: ${PROFILE_DIR}${PROFILE_NAME ? ` (${PROFILE_NAME})` : ''}`)
+  console.log(
+    `Chrome profile: ${PROFILE_DIR}${PROFILE_NAME ? ` (${PROFILE_NAME})` : ''}`,
+  )
 
   if (usingRealProfile) {
     // Chrome holds an exclusive lock on a user-data-dir while it runs, so a
@@ -264,7 +419,9 @@ async function main() {
     }
   } else {
     console.log('First run: sign in to PartyRock in the window that opens. The')
-    console.log('session persists in that folder, so later runs skip the login.')
+    console.log(
+      'session persists in that folder, so later runs skip the login.',
+    )
     console.log('If Google refuses to sign in there, see docs/CAPTURE.md —')
     console.log('cloning your real profile avoids the login entirely.\n')
   }
@@ -330,7 +487,10 @@ async function main() {
     })
 
     try {
-      await page.goto(item.url, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+      await page.goto(item.url, {
+        waitUntil: 'domcontentloaded',
+        timeout: 60_000,
+      })
     } catch (error) {
       console.log(`        Could not open the page: ${error.message}`)
       summary.failed++
@@ -365,7 +525,9 @@ async function main() {
       })
       state = await page.evaluate(() => window.__PR_CAPTURE_STATE)
     } catch (error) {
-      console.log(`        Page closed before capture (${error.message.split('\n')[0]}).`)
+      console.log(
+        `        Page closed before capture (${error.message.split('\n')[0]}).`,
+      )
       summary.skipped++
       await page.close().catch(() => {})
       continue
@@ -405,7 +567,9 @@ async function main() {
       console.log(`        ${result.body.message}`)
       summary.noMatch++
     } else {
-      console.log(`        Failed (HTTP ${result.status}): ${result.body?.message || ''}`)
+      console.log(
+        `        Failed (HTTP ${result.status}): ${result.body?.message || ''}`,
+      )
       summary.failed++
     }
 
@@ -418,8 +582,13 @@ async function main() {
   )
   console.log('Leave the browser open to keep the session, or close it now.')
 
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
-  await new Promise((resolve) => rl.question('Press Enter to close the browser... ', resolve))
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  })
+  await new Promise((resolve) =>
+    rl.question('Press Enter to close the browser... ', resolve),
+  )
   rl.close()
 
   await context.close()

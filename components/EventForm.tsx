@@ -65,7 +65,11 @@ export default function EventForm({ mode, event }: EventFormProps) {
           : await updateEventAction(event!.id, formData)
 
       if (actionResult.success) {
-        router.push('/admin/events')
+        // After an edit, return to the event detail page the user came from;
+        // after a create, go back to the events list.
+        router.push(
+          mode === 'edit' ? `/admin/events/${event!.id}` : '/admin/events',
+        )
       } else {
         if (actionResult.fieldErrors) {
           setErrors(actionResult.fieldErrors)
@@ -87,7 +91,10 @@ export default function EventForm({ mode, event }: EventFormProps) {
 
       {/* Name field */}
       <div>
-        <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+        <label
+          htmlFor="name"
+          className="block text-sm font-medium text-gray-700 mb-1"
+        >
           Event Name <span className="text-red-500">*</span>
         </label>
         <input
@@ -108,7 +115,10 @@ export default function EventForm({ mode, event }: EventFormProps) {
 
       {/* Description field */}
       <div>
-        <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
+        <label
+          htmlFor="description"
+          className="block text-sm font-medium text-gray-700 mb-1"
+        >
           Description
         </label>
         <textarea
@@ -128,7 +138,10 @@ export default function EventForm({ mode, event }: EventFormProps) {
 
       {/* Start Date field */}
       <div>
-        <label htmlFor="startDate" className="block text-sm font-medium text-gray-700 mb-1">
+        <label
+          htmlFor="startDate"
+          className="block text-sm font-medium text-gray-700 mb-1"
+        >
           Start Date
         </label>
         <input
@@ -147,7 +160,10 @@ export default function EventForm({ mode, event }: EventFormProps) {
 
       {/* End Date field */}
       <div>
-        <label htmlFor="endDate" className="block text-sm font-medium text-gray-700 mb-1">
+        <label
+          htmlFor="endDate"
+          className="block text-sm font-medium text-gray-700 mb-1"
+        >
           End Date
         </label>
         <input

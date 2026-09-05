@@ -5,8 +5,8 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'PartyRock Assessment Tool',
-  description: 'Sistem penjurian untuk project PartyRock',
+  title: 'Scoring Project by PindAI',
+  description: 'Sistem penjurian project berbasis web dari berbagai platform',
 }
 
 export default function RootLayout({

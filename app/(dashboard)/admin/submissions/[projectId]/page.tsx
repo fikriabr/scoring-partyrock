@@ -1,13 +1,16 @@
 // app/(dashboard)/admin/submissions/[projectId]/page.tsx
 // RSC page displaying full detail for a single submission/project:
-// crawl metadata, AI scores, and jury scores, plus retry actions.
-// Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 4.3, 4.4
+// crawl metadata, AI scores, and jury scores, plus retry actions and the
+// per-type evidence panels.
+// Requirements: 1.7, 3.1, 3.2, 3.3, 3.4, 3.5, 4.3, 4.4, 5.1, 5.5, 5.6
 
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { db } from '@/lib/db'
 import { RetryButton } from '@/components/SubmissionForm'
 import CaptureImportPanel from '@/components/CaptureImportPanel'
+import SourceCodeEditor from '@/components/SourceCodeEditor'
+import ProjectTypeBadge from '@/components/ProjectTypeBadge'
 
 interface PageProps {
   params: Promise<{ projectId: string }>
@@ -16,6 +19,8 @@ interface PageProps {
 export default async function ProjectDetailPage({ params }: PageProps) {
   const { projectId } = await params
 
+  // No explicit `select` here, so every Project column — projectType
+  // included — comes back with the row. Requirements: 1.7
   const project = await db.project.findUnique({
     where: { id: projectId },
     include: {
@@ -63,6 +68,10 @@ export default async function ProjectDetailPage({ params }: PageProps) {
               <span className="rounded-md bg-gray-50 px-2 py-1">
                 Category: {project.category.name}
               </span>
+              {/* Project type sits next to the status badges — same pill shape,
+                  different palette so it does not read as a status.
+                  Requirements: 1.7 */}
+              <ProjectTypeBadge projectType={project.projectType} />
               <StatusBadge status={project.crawlStatus} />
               <StatusBadge status={project.scoreStatus} />
             </div>
@@ -133,17 +142,20 @@ export default async function ProjectDetailPage({ params }: PageProps) {
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {Array.isArray(project.metadata.widgets) &&
                   project.metadata.widgets.length > 0 ? (
-                    (project.metadata.widgets as { type: string; label: string }[]).map(
-                      (widget, idx) => (
-                        <span
-                          key={idx}
-                          className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700 ring-1 ring-blue-200"
-                        >
-                          <span className="text-blue-400">{widget.type}</span>
-                          {widget.label}
-                        </span>
-                      ),
-                    )
+                    (
+                      project.metadata.widgets as {
+                        type: string
+                        label: string
+                      }[]
+                    ).map((widget, idx) => (
+                      <span
+                        key={idx}
+                        className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700 ring-1 ring-blue-200"
+                      >
+                        <span className="text-blue-400">{widget.type}</span>
+                        {widget.label}
+                      </span>
+                    ))
                   ) : (
                     <span className="text-sm text-amber-600">
                       No widgets found — run a manual capture (below) so the AI
@@ -160,9 +172,11 @@ export default async function ProjectDetailPage({ params }: PageProps) {
                 {Array.isArray(project.metadata.prompts) &&
                 project.metadata.prompts.length > 0 ? (
                   <ul className="mt-2 list-disc list-inside space-y-1 text-sm text-gray-700">
-                    {(project.metadata.prompts as string[]).map((prompt, idx) => (
-                      <li key={idx}>{prompt}</li>
-                    ))}
+                    {(project.metadata.prompts as string[]).map(
+                      (prompt, idx) => (
+                        <li key={idx}>{prompt}</li>
+                      ),
+                    )}
                   </ul>
                 ) : (
                   <p className="mt-1 text-sm text-gray-400">No prompts found</p>
@@ -173,26 +187,38 @@ export default async function ProjectDetailPage({ params }: PageProps) {
         </div>
       </section>
 
-      {/* Manual capture section — the widget/prompt data the HTTP crawler
-          cannot reach. See lib/services/capture.service.ts. */}
+      {/* Evidence section — Source Code first, because it applies to every
+          project type and carries the availability indicator (Requirement
+          5.6). The capture import panel follows, PartyRock-only. */}
       <section>
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">
-          Capture Data
-          {project.sourceCode ? (
-            <span className="ml-2 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">
-              tersedia ({project.sourceCode.length.toLocaleString()} char)
-            </span>
-          ) : (
-            <span className="ml-2 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-amber-200">
-              belum ada
-            </span>
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Evidence</h2>
+        <div className="space-y-4">
+          {/* Both project types: the editor owns the Source Code availability
+              and size indicator, so the page must not render a second one.
+              Requirements: 5.1, 5.6 */}
+          <SourceCodeEditor
+            projectId={project.id}
+            sourceCode={project.sourceCode}
+            projectType={project.projectType}
+          />
+
+          {/* Manual capture — the widget/prompt data the HTTP crawler cannot
+              reach (see lib/services/capture.service.ts). Rendered only for
+              PARTYROCK: the capture payload has no meaning for an HTML
+              project, whose evidence is its markup. Requirements: 5.5 */}
+          {project.projectType === 'PARTYROCK' && (
+            <div>
+              <h3 className="mb-3 text-sm font-semibold text-gray-900">
+                Capture Data
+              </h3>
+              <CaptureImportPanel
+                projectId={project.id}
+                projectUrl={project.url}
+                categoryId={project.categoryId}
+              />
+            </div>
           )}
-        </h2>
-        <CaptureImportPanel
-          projectId={project.id}
-          projectUrl={project.url}
-          categoryId={project.categoryId}
-        />
+        </div>
       </section>
 
       {/* AI Scores section */}
@@ -222,7 +248,10 @@ export default async function ProjectDetailPage({ params }: PageProps) {
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {project.aiScores.map((aiScore) => (
-                    <tr key={aiScore.id} className="hover:bg-gray-50/50 transition-colors">
+                    <tr
+                      key={aiScore.id}
+                      className="hover:bg-gray-50/50 transition-colors"
+                    >
                       <td className="px-4 py-3 font-medium text-gray-900">
                         {aiScore.parameter.name}
                       </td>
@@ -273,7 +302,10 @@ export default async function ProjectDetailPage({ params }: PageProps) {
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {project.juryScores.map((juryScore) => (
-                    <tr key={juryScore.id} className="hover:bg-gray-50/50 transition-colors">
+                    <tr
+                      key={juryScore.id}
+                      className="hover:bg-gray-50/50 transition-colors"
+                    >
                       <td className="px-4 py-3 font-medium text-gray-900">
                         {juryScore.parameter.name}
                       </td>

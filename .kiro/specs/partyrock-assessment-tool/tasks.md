@@ -207,29 +207,62 @@ Implementasi dilakukan secara incremental dalam urutan: foundation (database, au
     `widgets`, `prompts`, dan `widgetCount` selalu kosong dan AI scoring
     menilai hanya dari judul + deskripsi.
   - [x] 21.1 Buat `public/partyrock-capture.js` — jalan di dalam halaman
-    PartyRock, wrap `fetch`/`XHR` untuk membaca definisi app dari traffic yang
-    diminta halaman itu sendiri, plus ekstraksi DOM sebagai cadangan dan
-    satu-satunya sumber output AI; panel melayang untuk kirim/salin/lewati
+        PartyRock, wrap `fetch`/`XHR` untuk membaca definisi app dari traffic yang
+        diminta halaman itu sendiri, plus ekstraksi DOM sebagai cadangan dan
+        satu-satunya sumber output AI; panel melayang untuk kirim/salin/lewati
     - _Requirements: 4.2, 4.5_
   - [x] 21.2 Buat `lib/services/capture.service.ts` + `app/api/capture/route.ts`
-    dan `app/api/capture/queue/route.ts` — cocokkan URL ke project (normalisasi
-    URL, fallback app id), simpan `CrawlMetadata` + `Project.sourceCode`, set
-    `crawlStatus = SUCCESS`, panggil `ScorerService.triggerScoring`; auth via
-    shared token (`CAPTURE_TOKEN`) atau sesi Admin
+        dan `app/api/capture/queue/route.ts` — cocokkan URL ke project (normalisasi
+        URL, fallback app id), simpan `CrawlMetadata` + `Project.sourceCode`, set
+        `crawlStatus = SUCCESS`, panggil `ScorerService.triggerScoring`; auth via
+        shared token (`CAPTURE_TOKEN`) atau sesi Admin
     - _Requirements: 4.2, 4.5, 4.6, 5.1, 9.3, 9.4_
   - [x] 21.3 Buat `scripts/partyrock-navigate.js` — automasi **navigasi saja**:
-    buka Chrome asli (headed, profil persisten), kunjungi tiap URL antrian,
-    inject script capture, kirim hasil dari Node. Klik widget tetap manual —
-    lihat `docs/CAPTURE.md` untuk alasannya
+        buka Chrome asli (headed, profil persisten), kunjungi tiap URL antrian,
+        inject script capture, kirim hasil dari Node. Klik widget tetap manual —
+        lihat `docs/CAPTURE.md` untuk alasannya
     - _Requirements: 4.1, 4.3_
   - [x] 21.4 Buat `components/CaptureImportPanel.tsx` — fallback paste-JSON per
-    project di halaman detail submission, tanpa Playwright
+        project di halaman detail submission, tanpa Playwright
     - _Requirements: 4.6_
   - [x] 21.5 Tulis test untuk capture pipeline
     - `__tests__/services/capture-ingest.property.test.ts` — pencocokan URL
       tahan rename app, kelengkapan `sourceCode`, persistensi + re-scoring
     - `__tests__/services/capture-script.test.ts` — ekstraksi widget dari JSON
       arbitrer di DOM stub, termasuk payload siklik dan false positive schema
+
+- [ ] 22. Implementasi Google Sheets Integration
+  - [ ] 22.1 Update Prisma schema — tambahkan field `spreadsheetId String?`, `autoSync Boolean @default(false)`, dan `syncEmail String?` pada model `Category`; jalankan `prisma generate` dan `prisma db push`
+    - _Requirements: 10.7_
+  - [ ] 22.2 Buat `lib/services/sheets.service.ts` — class `SheetsService` dengan autentikasi Google service account via `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` env var; method `createLeaderboardSheet(title, projects, parameterNames)` yang membuat spreadsheet baru via Google Sheets API v4 dan menulis header + data rows; method `shareSpreadsheet(spreadsheetId, emails)` yang memberi akses writer via Google Drive API; method `updateLeaderboardSheet(spreadsheetId, projects, parameterNames)` yang clear lalu tulis ulang data
+    - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.6_
+  - [ ] 22.3 Buat `app/api/sheets/[categoryId]/route.ts` — POST handler untuk create spreadsheet baru (fetch leaderboard, panggil `createLeaderboardSheet`, share ke emails, simpan `spreadsheetId` ke DB); PATCH handler untuk toggle `autoSync` dan update `syncEmail`; terapkan rate limiting 5 request/menit per user, guard Admin-only
+    - _Requirements: 10.3, 10.4, 10.7, 10.9_
+  - [ ] 22.4 Buat fungsi `triggerSheetSync(categoryId)` di `lib/services/sheets.service.ts` — cek `category.autoSync` dan `spreadsheetId`, jika aktif panggil `updateLeaderboardSheet`; wrap dalam try-catch agar error non-blocking (log ke console, jangan ganggu alur scoring)
+    - _Requirements: 10.5, 10.6, 10.8_
+  - [ ] 22.5 Wire auto-sync: panggil `triggerSheetSync(categoryId)` di `jury.service.ts` (setelah recalculate finalScore) dan di `scorer.service.ts` (setelah calculate finalScore sementara) — pastikan non-blocking (fire-and-forget pattern dengan `.catch(console.error)`)
+    - _Requirements: 10.5_
+  - [ ]\* 22.6 Tulis property test untuk Property 21: Google Sheets Export Data Integrity
+    - **Property 21: Google Sheets Export Data Integrity**
+    - **Validates: Requirements 10.3, 10.5, 10.6**
+  - [ ]\* 22.7 Tulis property test untuk Property 22: Google Sheets Auto-sync Idempotency
+    - **Property 22: Google Sheets Auto-sync Idempotency**
+    - **Validates: Requirements 10.5, 10.6**
+  - [ ]\* 22.8 Tulis unit tests untuk SheetsService
+    - Test createLeaderboardSheet dengan mock googleapis
+    - Test shareSpreadsheet dengan multiple emails
+    - Test updateLeaderboardSheet (clear + rewrite)
+    - Test error handling (invalid credentials, quota exceeded)
+    - _Requirements: 10.8_
+
+- [ ] 23. Implementasi UI Google Sheets di halaman Leaderboard Admin
+  - [ ] 23.1 Update `app/(dashboard)/admin/leaderboard/[categoryId]/page.tsx` — tambahkan tombol "Export to Google Sheets" yang membuka modal input emails (comma-separated); setelah export berhasil tampilkan link ke spreadsheet; tambahkan toggle switch "Auto-sync" dengan indikator status (aktif/nonaktif) dan field email penerima
+    - _Requirements: 10.3, 10.4, 10.5, 10.7_
+  - [ ] 23.2 Buat component `components/SheetsExportModal.tsx` — modal dialog dengan: input field emails (validasi format email client-side), tombol "Export", loading state, success state (tampilkan spreadsheet URL sebagai link), error state (tampilkan pesan error dari API)
+    - _Requirements: 10.3, 10.4, 10.8_
+
+- [ ] 24. Checkpoint — Pastikan Google Sheets integration tests pass
+  - Pastikan semua tests pass (unit, property). Tanya user jika ada pertanyaan.
 
 ---
 
@@ -242,6 +275,8 @@ Implementasi dilakukan secara incremental dalam urutan: foundation (database, au
 - Unit tests memvalidasi contoh spesifik dan edge cases
 - Pipeline Submission → Crawl → AI Score berjalan async — status polling dari frontend dilakukan via polling API atau ISR revalidation
 - Requirement 8.4 (project comparison view) diimplementasikan di task 17.4 sebagai halaman terpisah
+- Google Sheets auto-sync bersifat non-blocking (fire-and-forget) agar tidak mengganggu alur penilaian utama
+- `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` env var harus di-set ke path file JSON service account credentials
 
 ## Task Dependency Graph
 
@@ -266,9 +301,11 @@ Implementasi dilakukan secara incremental dalam urutan: foundation (database, au
     { "id": 12, "tasks": ["17.1", "17.2"] },
     { "id": 13, "tasks": ["17.3", "17.4", "18.1"] },
     { "id": 14, "tasks": ["18.2", "18.3"] },
-    { "id": 15, "tasks": ["19.1"] },
-    { "id": 16, "tasks": ["19.2"] },
-    { "id": 17, "tasks": ["19.3"] }
+    { "id": 15, "tasks": ["19.1", "22.1"] },
+    { "id": 16, "tasks": ["19.2", "22.2"] },
+    { "id": 17, "tasks": ["19.3", "22.3", "22.4"] },
+    { "id": 18, "tasks": ["22.5", "22.6", "22.7", "22.8"] },
+    { "id": 19, "tasks": ["23.1", "23.2"] }
   ]
 }
 ```

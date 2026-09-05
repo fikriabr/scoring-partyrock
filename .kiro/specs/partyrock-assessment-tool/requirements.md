@@ -26,6 +26,9 @@ PartyRock Assessment Tool adalah aplikasi web fullstack berbasis Next.js 15 untu
 - **Leaderboard**: Tampilan peringkat project berdasarkan Skor Final dalam suatu kategori.
 - **Prisma ORM**: Object-Relational Mapper yang digunakan untuk interaksi dengan database PostgreSQL (Neon).
 - **NextAuth**: Library autentikasi yang digunakan untuk manajemen sesi dan JWT.
+- **Google Sheets API**: API Google untuk membuat dan memanipulasi spreadsheet secara programatis, diakses melalui package `googleapis`.
+- **Service Account**: Akun Google Cloud tanpa interaksi user yang digunakan untuk autentikasi server-to-server ke Google Sheets API.
+- **Auto-sync**: Fitur opsional yang secara otomatis memperbarui data di Google Sheets setiap kali Skor Final berubah.
 
 ---
 
@@ -152,6 +155,24 @@ PartyRock Assessment Tool adalah aplikasi web fullstack berbasis Next.js 15 untu
 
 ---
 
+### Requirement 10: Integrasi Google Sheets untuk Export dan Sinkronisasi Leaderboard
+
+**User Story:** Sebagai Admin, saya ingin mengekspor dan menyinkronkan data leaderboard ke Google Sheets secara otomatis, agar hasil penilaian dapat dibagikan dan diakses secara kolaboratif melalui spreadsheet.
+
+#### Acceptance Criteria
+
+1. THE System SHALL menyediakan service `SheetsService` di `lib/services/sheets.service.ts` yang menggunakan package `googleapis` untuk berinteraksi dengan Google Sheets API v4.
+2. THE System SHALL mengautentikasi ke Google Sheets API menggunakan service account yang kunci privatnya disimpan dalam environment variable `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` (path ke file JSON credentials).
+3. WHEN Admin mengklik tombol "Export to Google Sheets" pada halaman leaderboard kategori, THE System SHALL membuat spreadsheet baru di Google Drive dengan nama format `[Event Name] - [Category Name] - Leaderboard` dan mengisi data leaderboard lengkap (peringkat, nama peserta/tim, URL project, skor final, rincian skor per parameter AI dan Juri).
+4. THE System SHALL secara otomatis memberikan akses (share) spreadsheet yang baru dibuat ke satu atau lebih alamat email yang ditentukan Admin melalui field input sebelum export, dengan permission role "writer".
+5. WHEN fitur auto-sync diaktifkan oleh Admin untuk sebuah kategori, THE System SHALL memperbarui data di spreadsheet yang sudah terhubung setiap kali `finalScore` sebuah project dalam kategori tersebut berubah.
+6. IF auto-sync diaktifkan dan spreadsheet sudah ada, THEN THE System SHALL memperbarui baris yang berubah di spreadsheet yang sama tanpa membuat spreadsheet baru, dan memperbarui timestamp kolom "Last Updated" di sheet.
+7. THE System SHALL menyimpan referensi `spreadsheetId` dan status `autoSync` (boolean) pada model `Category` di database agar koneksi ke Google Sheets persisten antar sesi.
+8. IF proses pembuatan spreadsheet atau sinkronisasi gagal (misalnya credentials invalid, quota terlampaui, atau network error), THEN THE System SHALL mengembalikan pesan error yang informatif kepada Admin tanpa mengganggu alur penilaian utama, dan mencatat error ke logging system.
+9. THE System SHALL menerapkan rate limiting pada API route Google Sheets (maksimum 5 request per menit per user) untuk menghindari pelanggaran quota Google Sheets API.
+
+---
+
 ### Requirement 9: Infrastruktur dan Kualitas Teknis
 
 **User Story:** Sebagai tim pengembang, saya ingin memastikan sistem dibangun dengan standar teknis yang sesuai, agar aplikasi dapat dipelihara, aman, dan dapat diandalkan.
@@ -161,7 +182,7 @@ PartyRock Assessment Tool adalah aplikasi web fullstack berbasis Next.js 15 untu
 1. THE System SHALL diimplementasikan sebagai aplikasi Next.js 15 App Router fullstack dengan API routes sebagai backend endpoint dan React Server Components untuk rendering.
 2. THE System SHALL menggunakan Prisma ORM untuk seluruh interaksi dengan database PostgreSQL (Neon) dan schema database harus terdefinisi dalam file `prisma/schema.prisma`.
 3. THE System SHALL memvalidasi seluruh input dari pengguna dan data dari sumber eksternal menggunakan Zod schema sebelum diproses atau disimpan ke database.
-4. THE System SHALL menyimpan seluruh konfigurasi sensitif (database URL, AWS credentials, NextAuth secret) dalam environment variables dan tidak pernah menyertakannya dalam source code.
+4. THE System SHALL menyimpan seluruh konfigurasi sensitif (database URL, AWS credentials, NextAuth secret, Google service account key file) dalam environment variables dan tidak pernah menyertakannya dalam source code.
 5. WHEN terjadi error yang tidak tertangani pada API route, THE System SHALL mengembalikan respons JSON dengan struktur error yang konsisten (berisi `error`, `message`, dan `code`) dan mencatat error ke logging system tanpa mengekspos stack trace ke client.
 6. THE System SHALL mengimplementasikan rate limiting pada API route yang memicu crawling dan AI scoring untuk mencegah penyalahgunaan, dengan batas maksimum 10 request per menit per pengguna terautentikasi.
 7. THE System SHALL memastikan seluruh halaman publik dan dasbor dapat dirender dengan First Contentful Paint di bawah 3 detik pada koneksi jaringan standar.

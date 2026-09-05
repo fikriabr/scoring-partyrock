@@ -1,7 +1,8 @@
 // components/ParameterBuilder.tsx
 // Client component for dynamic parameter builder.
-// Supports add/remove rows, real-time weight total, and batch save.
-// Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6
+// Supports add/remove rows, real-time weight total, batch save, and picking
+// which default parameter template to load.
+// Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 6.3
 
 'use client'
 
@@ -10,6 +11,16 @@ import {
   loadDefaultParametersAction,
   saveParametersAction,
 } from '@/actions/parameter.actions'
+// The templates come from the neutral module, never from
+// `lib/services/category.service.ts`: that service imports `@/lib/db` and
+// `@prisma/client` as values, which would follow this client component into
+// the browser bundle.
+import {
+  DEFAULT_PARAMETER_SETS,
+  DEFAULT_PARAMETER_SET_LABELS,
+  DEFAULT_PARAMETER_SET_ORDER,
+  type DefaultParameterSet,
+} from '@/lib/default-parameter-sets'
 
 type ScoringMode = 'AUTO' | 'MANUAL'
 
@@ -65,6 +76,14 @@ export default function ParameterBuilder({
   const [error, setError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+  // Which template the Load button will seed. Requirement 6.3.
+  const [selectedSet, setSelectedSet] =
+    useState<DefaultParameterSet>('PARTYROCK')
+  // Set to true once the admin has been warned that loading appends rows to a
+  // category that already has parameters; reset on every other interaction.
+  const [awaitingLoadConfirm, setAwaitingLoadConfirm] = useState(false)
+
+  const selectedTemplate = DEFAULT_PARAMETER_SETS[selectedSet]
 
   // Calculate total weight
   const totalWeight = parameters.reduce((sum, p) => sum + p.weight, 0)
@@ -85,12 +104,14 @@ export default function ParameterBuilder({
     ])
     setError(null)
     setSuccessMessage(null)
+    setAwaitingLoadConfirm(false)
   }, [])
 
   const removeParameter = useCallback((id: string) => {
     setParameters((prev) => prev.filter((p) => p.id !== id))
     setError(null)
     setSuccessMessage(null)
+    setAwaitingLoadConfirm(false)
   }, [])
 
   const updateParameter = useCallback(
@@ -100,15 +121,28 @@ export default function ParameterBuilder({
       )
       setError(null)
       setSuccessMessage(null)
+      setAwaitingLoadConfirm(false)
     },
     [],
   )
 
+  // Seeding is additive on the server (`createMany` with `skipDuplicates`), so
+  // loading a template into a category that already has parameters appends rows
+  // and can push the weight total well past 100%. Warn first, load on the
+  // second click. Requirements: 6.2, 6.3
   const handleLoadDefaults = () => {
+    if (parameters.length > 0 && !awaitingLoadConfirm) {
+      setError(null)
+      setSuccessMessage(null)
+      setAwaitingLoadConfirm(true)
+      return
+    }
+
+    setAwaitingLoadConfirm(false)
     startTransition(async () => {
       setError(null)
       setSuccessMessage(null)
-      const result = await loadDefaultParametersAction(categoryId)
+      const result = await loadDefaultParametersAction(categoryId, selectedSet)
       if (result.success) {
         // Reload the page to get fresh data from server
         window.location.reload()
@@ -184,9 +218,7 @@ export default function ParameterBuilder({
         >
           &larr; Back to Events
         </a>
-        <h1 className="text-2xl font-bold mt-2">
-          Parameters: {categoryName}
-        </h1>
+        <h1 className="text-2xl font-bold mt-2">Parameters: {categoryName}</h1>
       </div>
 
       {/* Warning for existing scores */}
@@ -219,7 +251,7 @@ export default function ParameterBuilder({
       </div>
 
       {/* Action buttons */}
-      <div className="mb-4 flex gap-2">
+      <div className="mb-2 flex flex-wrap items-end gap-2">
         <button
           onClick={addParameter}
           className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
@@ -227,6 +259,35 @@ export default function ParameterBuilder({
         >
           Add Parameter
         </button>
+
+        {/* Default template picker — Requirement 6.3 */}
+        <div>
+          <label
+            htmlFor="default-parameter-set"
+            className="block text-xs font-medium text-gray-700 mb-1"
+          >
+            Default template
+          </label>
+          <select
+            id="default-parameter-set"
+            value={selectedSet}
+            onChange={(e) => {
+              setSelectedSet(e.target.value as DefaultParameterSet)
+              setError(null)
+              setSuccessMessage(null)
+              setAwaitingLoadConfirm(false)
+            }}
+            className="px-3 py-2 border border-gray-300 rounded text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={isPending}
+          >
+            {DEFAULT_PARAMETER_SET_ORDER.map((set) => (
+              <option key={set} value={set}>
+                {DEFAULT_PARAMETER_SET_LABELS[set]}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <button
           onClick={handleLoadDefaults}
           className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm"
@@ -242,6 +303,47 @@ export default function ParameterBuilder({
           {isPending ? 'Saving...' : 'Save Parameters'}
         </button>
       </div>
+
+      {/* What the selected template will seed, so the admin knows before
+          clicking. Requirement 6.3 */}
+      <p className="mb-4 text-xs text-gray-500">
+        {DEFAULT_PARAMETER_SET_LABELS[selectedSet]} template:{' '}
+        {selectedTemplate.length} parameters totalling 100% &mdash;{' '}
+        {selectedTemplate.map((p) => `${p.name} (${p.weight}%)`).join(', ')}
+      </p>
+
+      {/* Additive-load warning — shown when the category already has
+          parameters. Requirements: 6.2, 6.3 */}
+      {awaitingLoadConfirm && (
+        <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded text-yellow-800 text-sm">
+          <p>
+            This category already has {parameters.length} parameter
+            {parameters.length === 1 ? '' : 's'}. Loading the{' '}
+            {DEFAULT_PARAMETER_SET_LABELS[selectedSet]} template{' '}
+            <strong>adds</strong> its {selectedTemplate.length} parameters
+            instead of replacing the existing ones, including any duplicate
+            names. Expect a weight total above 100% that you will have to
+            rebalance before saving. Remove the parameters you do not want first
+            if you meant to swap templates.
+          </p>
+          <div className="mt-2 flex gap-2">
+            <button
+              onClick={handleLoadDefaults}
+              className="px-3 py-1.5 bg-yellow-600 text-white rounded hover:bg-yellow-700 text-sm"
+              disabled={isPending}
+            >
+              Load anyway
+            </button>
+            <button
+              onClick={() => setAwaitingLoadConfirm(false)}
+              className="px-3 py-1.5 bg-white border border-gray-300 text-gray-700 rounded hover:bg-gray-50 text-sm"
+              disabled={isPending}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Error / Success messages */}
       {error && (

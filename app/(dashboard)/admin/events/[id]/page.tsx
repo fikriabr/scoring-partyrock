@@ -56,6 +56,15 @@ export default async function AdminEventDetailPage({ params }: Props) {
               )}
             </div>
           </div>
+
+          {/* Edit event action */}
+          <Link
+            href={`/admin/events/${event.id}/edit`}
+            className="inline-flex shrink-0 items-center gap-2 self-start rounded-lg border border-gray-300 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 hover:text-blue-600"
+          >
+            <span>✏️</span>
+            Edit Event
+          </Link>
         </div>
       </div>
 
@@ -122,14 +131,21 @@ export default async function AdminEventDetailPage({ params }: Props) {
                   )}
                 </Link>
 
-                {/* Footer link — navigates to the leaderboard for this category */}
-                <div className="mt-3 border-t border-gray-50 pt-2">
+                {/* Footer links — leaderboard and category edit */}
+                <div className="mt-3 flex items-center justify-between gap-3 border-t border-gray-50 pt-2">
                   <Link
                     href={`/admin/leaderboard/${category.id}`}
                     className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 transition-colors hover:text-blue-600"
                   >
                     <span>📊</span>
                     View Leaderboard
+                  </Link>
+                  <Link
+                    href={`/admin/events/${event.id}/categories/${category.id}/edit`}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 transition-colors hover:text-blue-600"
+                  >
+                    <span>✏️</span>
+                    Edit
                   </Link>
                 </div>
               </div>

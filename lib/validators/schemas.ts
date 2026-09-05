@@ -1,7 +1,70 @@
 // lib/validators/schemas.ts
 
 import { z } from 'zod'
-import { ScoringMode } from '@prisma/client'
+import { ProjectType, ScoringMode } from '@prisma/client'
+import { isPartyRockHost, validateProjectUrl } from './url-rules'
+import {
+  MAX_SOURCE_CODE_LENGTH,
+  SOURCE_CODE_TOO_LONG_MESSAGE,
+} from './source-code-rules'
+
+// -----------------------------------------------------------------------
+// Shared URL rule
+// The hostname rule used to be duplicated in SubmissionSchema, CsvRowSchema
+// and CaptureSchema. All three now delegate to lib/validators/url-rules.ts,
+// which is also what the client-side form validation uses.
+// Requirements: 2.1, 2.2, 2.3, 2.4, 2.5
+// -----------------------------------------------------------------------
+
+/**
+ * The `projectType` field shared by the submission schemas. Defaulting to
+ * `PARTYROCK` keeps every existing caller — API clients, forms, CSV imports —
+ * working without sending the field, and matches the Prisma column default so
+ * records written before this feature stay valid.
+ * Requirements: 1.2, 8.1
+ */
+const projectTypeField = z.nativeEnum(ProjectType).default(ProjectType.PARTYROCK)
+
+/**
+ * The Source Code length limit and its message now live in
+ * `lib/validators/source-code-rules.ts`, a Prisma-free module, because client
+ * components need the number for their character counters and this file pulls
+ * in the Prisma runtime via `z.nativeEnum`. Re-exported here so callers that
+ * already read the limit off the schemas module keep working.
+ * Requirements: 5.3
+ */
+export { MAX_SOURCE_CODE_LENGTH, SOURCE_CODE_TOO_LONG_MESSAGE }
+
+/**
+ * Object-level URL check for submission payloads.
+ *
+ * This has to live on the object rather than the `url` field itself: the rule
+ * depends on the sibling `projectType`, which a field-level refinement cannot
+ * see. `superRefine` (rather than `refine`) is used so the specific reason —
+ * unparseable, wrong scheme, or wrong host — reaches the caller instead of one
+ * catch-all message, and `path: ['url']` keeps the issue attached to the field
+ * the admin has to fix.
+ *
+ * A non-string or empty `url`, or an unrecognised `projectType`, has already
+ * produced its own field-level issue, so this check stays quiet rather than
+ * adding a second, less specific one.
+ */
+function refineProjectUrl(
+  data: { url: string; projectType: ProjectType },
+  ctx: z.RefinementCtx,
+): void {
+  if (typeof data.url !== 'string' || data.url.length === 0) return
+  if (data.projectType == null) return
+
+  const result = validateProjectUrl(data.url, data.projectType)
+  if (!result.ok) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: result.message,
+      path: ['url'],
+    })
+  }
+}
 
 // -----------------------------------------------------------------------
 // EventSchema
@@ -169,29 +232,15 @@ export type ParameterSetInput = z.infer<typeof ParameterSetSchema>
 // -----------------------------------------------------------------------
 // SubmissionSchema
 // Validates a project submission URL and participant details.
-// URL must be on the partyrock.aws domain.
-// Requirements: 3.1, 3.2, 9.3
+// The URL rule depends on projectType: PARTYROCK submissions are restricted to
+// the partyrock.aws domain, HTML submissions accept any hostname.
+// Requirements: 2.1, 2.2, 2.4, 3.1, 3.2, 9.3
 // -----------------------------------------------------------------------
 
 export const SubmissionSchema = z.object({
-  url: z
-    .string()
-    .min(1, 'URL is required')
-    .url('URL must be a valid URL')
-    .refine(
-      (url) => {
-        try {
-          const parsed = new URL(url)
-          return (
-            parsed.hostname === 'partyrock.aws' ||
-            parsed.hostname.endsWith('.partyrock.aws')
-          )
-        } catch {
-          return false
-        }
-      },
-      { message: 'URL must be a valid PartyRock URL (domain: partyrock.aws)' }
-    ),
+  /** Placed first because it decides which URL rule applies below. */
+  projectType: projectTypeField,
+  url: z.string().min(1, 'URL is required'),
   participantName: z
     .string()
     .min(1, 'Participant name is required')
@@ -203,13 +252,58 @@ export const SubmissionSchema = z.object({
     .nullable(),
   sourceCode: z
     .string()
-    .max(100000, 'Source code must not exceed 100,000 characters')
+    .max(MAX_SOURCE_CODE_LENGTH, SOURCE_CODE_TOO_LONG_MESSAGE)
     .optional()
     .nullable(),
   categoryId: z.string().min(1, 'Category ID is required'),
+}).superRefine(refineProjectUrl)
+
+/**
+ * Validated submission data. This is the *output* type, so `projectType` is
+ * always present here even when the caller omitted it. Callers that build a
+ * payload before parsing should use `z.input<typeof SubmissionSchema>` instead,
+ * where `projectType` is optional.
+ */
+export type SubmissionInput = z.infer<typeof SubmissionSchema>
+
+// -----------------------------------------------------------------------
+// SourceCodeUpdateSchema
+// Validates the body of `PATCH /api/submissions/[id]` — the admin editor that
+// pastes or corrects a project's Source Code after submission.
+//
+// Applies to both project types: an HTML project whose URL cannot be fetched
+// needs pasted markup to be scoreable at all, and a PartyRock project can
+// still carry hand-collected evidence.
+// Requirements: 5.2, 5.3
+// -----------------------------------------------------------------------
+
+export const SourceCodeUpdateSchema = z.object({
+  /**
+   * Blank input normalises to `null` rather than `''`.
+   *
+   * Downstream, `hasUsableText` in the scorer and `hasUsableSourceCode` in the
+   * crawler both treat a whitespace-only string as "no evidence". Storing `''`
+   * would satisfy neither predicate yet still read as a non-null column, so the
+   * normalisation happens here — at the only write path that can introduce the
+   * value — instead of being re-derived by every reader.
+   *
+   * The length cap is checked before the trim, so a payload over the limit is
+   * rejected on what the admin actually sent.
+   */
+  sourceCode: z
+    .string()
+    .max(MAX_SOURCE_CODE_LENGTH, SOURCE_CODE_TOO_LONG_MESSAGE)
+    .nullable()
+    .transform((value) => {
+      if (value == null) return null
+      return value.trim().length > 0 ? value : null
+    }),
 })
 
-export type SubmissionInput = z.infer<typeof SubmissionSchema>
+/** Raw body shape accepted by `SourceCodeUpdateSchema` (pre-transform). */
+export type SourceCodeUpdateInput = z.input<typeof SourceCodeUpdateSchema>
+/** Validated, normalised body — `sourceCode` is `string | null`, never `''`. */
+export type SourceCodeUpdateData = z.infer<typeof SourceCodeUpdateSchema>
 
 // -----------------------------------------------------------------------
 // JuryScoreSchema
@@ -249,28 +343,17 @@ export type JuryScoreInput = z.infer<typeof JuryScoreSchema>
 // Validates a single row from a bulk CSV import.
 // Columns: url, participantName (or participant_name), teamName (or team_name),
 //          sourceCode (or source_code), categoryId (or category_id)
-// Requirements: 3.4, 3.5, 9.3
+// Requirements: 2.1, 2.2, 2.4, 3.4, 3.5, 9.3
 // -----------------------------------------------------------------------
 
 export const CsvRowSchema = z.object({
-  url: z
-    .string()
-    .min(1, 'URL is required')
-    .url('URL must be a valid URL')
-    .refine(
-      (url) => {
-        try {
-          const parsed = new URL(url)
-          return (
-            parsed.hostname === 'partyrock.aws' ||
-            parsed.hostname.endsWith('.partyrock.aws')
-          )
-        } catch {
-          return false
-        }
-      },
-      { message: 'URL must be a valid PartyRock URL (domain: partyrock.aws)' }
-    ),
+  /**
+   * Optional on input with a `PARTYROCK` default, which is what lets
+   * `CsvRowRawSchema` keep piping into this schema without yet forwarding a
+   * project type of its own (that arrives with the CSV header aliases).
+   */
+  projectType: projectTypeField,
+  url: z.string().min(1, 'URL is required'),
   participantName: z
     .string()
     .min(1, 'Participant name is required')
@@ -293,11 +376,15 @@ export const CsvRowSchema = z.object({
    */
   sourceCode: z
     .string()
-    .max(100000, 'Source code must not exceed 100,000 characters')
+    .max(MAX_SOURCE_CODE_LENGTH, SOURCE_CODE_TOO_LONG_MESSAGE)
     .nullable(),
   categoryId: z.string().min(1, 'Category ID is required'),
-})
+}).superRefine(refineProjectUrl)
 
+/**
+ * Validated CSV row data — the *output* type, so `projectType` is always
+ * present (defaulted to `PARTYROCK` when the column is absent).
+ */
 export type CsvRowInput = z.infer<typeof CsvRowSchema>
 
 // -----------------------------------------------------------------------
@@ -317,10 +404,21 @@ export const CsvRowRawSchema = z
     sourceCode: z.string().optional().nullable(),
     category_id: z.string().optional(),
     categoryId: z.string().optional(),
+    /**
+     * Accepted as a free-form string, not as the enum, because the cell comes
+     * from a hand-edited spreadsheet: it needs trimming and case folding before
+     * it can be matched against the enum, and rejecting `html` here would
+     * produce a confusing error for a value the admin clearly meant.
+     * Requirements: 1.5
+     */
+    project_type: z.string().optional().nullable(),
+    projectType: z.string().optional().nullable(),
   })
   .transform((row) => {
     const teamRaw = row.teamName ?? row.team_name
     const sourceRaw = row.sourceCode ?? row.source_code
+    const projectTypeRaw = row.projectType ?? row.project_type
+    const projectTypeNormalised = projectTypeRaw?.trim().toUpperCase()
     return {
       url: row.url,
       participantName: (row.participantName ?? row.participant_name ?? '').trim(),
@@ -329,6 +427,25 @@ export const CsvRowRawSchema = z
       // Same for sourceCode — absent column means "no code pasted", i.e. null
       sourceCode: sourceRaw != null && sourceRaw.trim() !== '' ? sourceRaw : null,
       categoryId: (row.categoryId ?? row.category_id ?? '').trim(),
+      /**
+       * An absent column, a `null`, or a blank/whitespace cell must leave the
+       * key off entirely so `CsvRowSchema`'s `PARTYROCK` default applies —
+       * passing `''` through would instead fail the enum check and reject the
+       * row.
+       *
+       * Spread conditionally rather than assigning `undefined`: an explicit
+       * `projectType: undefined` types the key as *required* (present, possibly
+       * undefined), which `.pipe(CsvRowSchema)` rejects because the target's
+       * input has it optional. The spread keeps the key optional.
+       *
+       * The cast is needed because `z.nativeEnum` types its input as the enum,
+       * while the CSV only ever gives us a string. It is safe: an unrecognised
+       * value is still rejected downstream by the enum check, which is exactly
+       * the per-row rejection Requirement 1.6 asks for.
+       */
+      ...(projectTypeNormalised
+        ? { projectType: projectTypeNormalised as ProjectType }
+        : {}),
     }
   })
   .pipe(CsvRowSchema)
@@ -353,18 +470,18 @@ export const CaptureWidgetSchema = z.object({
 })
 
 export const CaptureSchema = z.object({
-  /** The PartyRock app URL that was open in the browser when captured. */
+  /**
+   * The PartyRock app URL that was open in the browser when captured.
+   * Always host-restricted regardless of project type — the capture pipeline
+   * only exists for PartyRock (Requirement 2.6).
+   */
   url: z
     .string()
     .min(1, 'URL is required')
     .refine(
       (url) => {
         try {
-          const parsed = new URL(url)
-          return (
-            parsed.hostname === 'partyrock.aws' ||
-            parsed.hostname.endsWith('.partyrock.aws')
-          )
+          return isPartyRockHost(new URL(url).hostname)
         } catch {
           return false
         }
