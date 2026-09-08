@@ -8,7 +8,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { db } from '@/lib/db'
 
-type ScoringStatus = 'belum dinilai' | 'sebagian' | 'selesai'
+type ScoringStatus = 'not scored' | 'partial' | 'completed'
 
 export default async function JuryProjectsPage({
   searchParams,
@@ -43,8 +43,8 @@ export default async function JuryProjectsPage({
       <div>
         <h1 className="text-2xl font-bold mb-6">My Projects</h1>
         <p className="text-gray-500">
-          Anda belum ditugaskan ke kategori manapun. Hubungi Admin untuk
-          mendapatkan assignment.
+          You have not been assigned to any category yet. Contact an Admin to
+          get an assignment.
         </p>
       </div>
     )
@@ -82,11 +82,11 @@ export default async function JuryProjectsPage({
 
     let status: ScoringStatus
     if (totalParameters === 0 || scoredParameters === 0) {
-      status = 'belum dinilai'
+      status = 'not scored'
     } else if (scoredParameters >= totalParameters) {
-      status = 'selesai'
+      status = 'completed'
     } else {
-      status = 'sebagian'
+      status = 'partial'
     }
 
     return {
@@ -113,7 +113,7 @@ export default async function JuryProjectsPage({
       {/* Category filter */}
       <div className="mb-6 flex items-center gap-3">
         <span className="text-sm font-medium text-gray-700">
-          Filter Kategori:
+          Filter by Category:
         </span>
         <div className="flex gap-2 flex-wrap">
           <Link
@@ -124,7 +124,7 @@ export default async function JuryProjectsPage({
                 : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
             }`}
           >
-            Semua
+            All
           </Link>
           {categories.map((cat) => (
             <Link
@@ -144,19 +144,17 @@ export default async function JuryProjectsPage({
 
       {/* Projects table */}
       {projectsWithStatus.length === 0 ? (
-        <p className="text-gray-500">
-          Tidak ada project dalam kategori yang dipilih.
-        </p>
+        <p className="text-gray-500">No projects in the selected category.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="bg-gray-100 text-left">
-                <th className="px-3 py-2 border-b font-medium">Peserta</th>
+                <th className="px-3 py-2 border-b font-medium">Participant</th>
                 <th className="px-3 py-2 border-b font-medium">URL</th>
-                <th className="px-3 py-2 border-b font-medium">Kategori</th>
+                <th className="px-3 py-2 border-b font-medium">Category</th>
                 <th className="px-3 py-2 border-b font-medium">
-                  Status Penilaian
+                  Scoring Status
                 </th>
                 <th className="px-3 py-2 border-b font-medium">Progress</th>
                 <th className="px-3 py-2 border-b font-medium">Actions</th>
@@ -166,9 +164,7 @@ export default async function JuryProjectsPage({
               {projectsWithStatus.map((project) => (
                 <tr key={project.id} className="border-b hover:bg-gray-50">
                   <td className="px-3 py-2">
-                    <div className="font-medium">
-                      {project.participantName}
-                    </div>
+                    <div className="font-medium">{project.participantName}</div>
                     {project.teamName && (
                       <div className="text-xs text-gray-500">
                         {project.teamName}
@@ -198,7 +194,7 @@ export default async function JuryProjectsPage({
                       href={`/jury/scoring/${project.id}`}
                       className="inline-block px-3 py-1 text-xs font-medium text-white bg-indigo-600 rounded hover:bg-indigo-700"
                     >
-                      Nilai
+                      Score
                     </Link>
                   </td>
                 </tr>
@@ -216,9 +212,9 @@ export default async function JuryProjectsPage({
 // -----------------------------------------------------------------------
 function ScoringStatusBadge({ status }: { status: ScoringStatus }) {
   const colors: Record<ScoringStatus, string> = {
-    'belum dinilai': 'bg-yellow-100 text-yellow-800',
-    sebagian: 'bg-blue-100 text-blue-800',
-    selesai: 'bg-green-100 text-green-800',
+    'not scored': 'bg-yellow-100 text-yellow-800',
+    partial: 'bg-blue-100 text-blue-800',
+    completed: 'bg-green-100 text-green-800',
   }
 
   return (

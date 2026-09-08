@@ -34,13 +34,13 @@ const PROJECT_TYPE_COPY: Record<
   { help: string; placeholder: string }
 > = {
   PARTYROCK: {
-    help: 'Isi dengan konfigurasi widget, prompt, atau source hasil capture. Ini evidence utama yang dinilai AI.',
+    help: 'Fill in the widget configuration, prompts, or captured source. This is the primary evidence the AI scores.',
     placeholder:
-      'Tempel konfigurasi widget / prompt / source hasil capture di sini...',
+      'Paste the captured widget configuration / prompts / source here...',
   },
   HTML: {
-    help: 'Isi dengan markup HTML halaman. Dipakai bila URL project tidak bisa di-fetch, dan menggantikan markup hasil crawl.',
-    placeholder: 'Tempel markup HTML halaman di sini...',
+    help: "Fill in the page's HTML markup. Used when the project URL cannot be fetched, and replaces the crawled markup.",
+    placeholder: "Paste the page's HTML markup here...",
   },
 }
 
@@ -65,9 +65,10 @@ export default function SourceCodeEditor({
   // the moment `router.refresh()` delivers fresh props.
   const [saved, setSaved] = useState(sourceCode ?? '')
   const [draft, setDraft] = useState(sourceCode ?? '')
-  const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(
-    null,
-  )
+  const [message, setMessage] = useState<{
+    kind: 'ok' | 'error'
+    text: string
+  } | null>(null)
 
   const copy = PROJECT_TYPE_COPY[projectType]
   const isUnchanged = draft === saved
@@ -85,7 +86,9 @@ export default function SourceCodeEditor({
           // "no evidence", which is what the scorer and the indicator below
           // both read. The server normalises whitespace-only input the same
           // way, so the two agree.
-          body: JSON.stringify({ sourceCode: draft.trim() === '' ? null : draft }),
+          body: JSON.stringify({
+            sourceCode: draft.trim() === '' ? null : draft,
+          }),
         })
 
         // Not every failure carries a JSON body (a proxy 502, an HTML error
@@ -106,11 +109,11 @@ export default function SourceCodeEditor({
         setDraft(stored)
         setMessage({
           kind: 'ok',
-          text: 'Source Code tersimpan. Skor AI sedang diperbarui — muat ulang beberapa saat lagi untuk melihat hasilnya.',
+          text: 'Source Code saved. The AI Score is being updated — reload in a moment to see the results.',
         })
         router.refresh()
       } catch {
-        setMessage({ kind: 'error', text: 'Network error. Coba lagi.' })
+        setMessage({ kind: 'error', text: 'Network error. Please try again.' })
       }
     })
   }
@@ -123,21 +126,21 @@ export default function SourceCodeEditor({
             Requirements: 5.6 */}
         {saved.length > 0 ? (
           <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">
-            tersedia ({saved.length.toLocaleString()} karakter)
+            available ({saved.length.toLocaleString()} characters)
           </span>
         ) : (
           <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-amber-200">
-            belum ada (0 karakter)
+            not set (0 characters)
           </span>
         )}
       </div>
 
       <p className="mt-1 text-sm text-gray-500">
-        {copy.help} Project ini bertipe{' '}
+        {copy.help} This project is of type{' '}
         <span className="font-medium text-gray-700">
           {projectTypeLabel(projectType)}
         </span>
-        . Menyimpan perubahan memicu ulang AI scoring.
+        . Saving changes re-triggers AI scoring.
       </p>
 
       <textarea
@@ -151,7 +154,9 @@ export default function SourceCodeEditor({
       />
 
       <div className="mt-1.5 flex justify-end text-xs text-gray-400">
-        <p className={`shrink-0 tabular-nums ${isTooLong ? 'text-red-600' : ''}`}>
+        <p
+          className={`shrink-0 tabular-nums ${isTooLong ? 'text-red-600' : ''}`}
+        >
           {draft.length.toLocaleString()} /{' '}
           {MAX_SOURCE_CODE_LENGTH.toLocaleString()}
         </p>
@@ -169,7 +174,7 @@ export default function SourceCodeEditor({
           disabled={isPending || isUnchanged || isTooLong}
           className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {isPending ? 'Menyimpan...' : 'Simpan & Score Ulang'}
+          {isPending ? 'Saving...' : 'Save & Re-score'}
         </button>
 
         {draft !== saved && !isPending && (
@@ -181,7 +186,7 @@ export default function SourceCodeEditor({
             }}
             className="rounded-lg bg-gray-100 px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-200"
           >
-            Batalkan Perubahan
+            Discard Changes
           </button>
         )}
 
@@ -203,7 +208,7 @@ export default function SourceCodeEditor({
  * The endpoint's own `message` is preferred — it is the most specific text
  * available, and for a 400 it names the actual validation problem. The
  * per-status fallbacks exist because a response without a usable body must
- * still say what went wrong rather than degrade to a generic "gagal".
+ * still say what went wrong rather than degrade to a generic "failed".
  */
 function errorText(status: number, body: unknown): string {
   const message =
@@ -212,21 +217,21 @@ function errorText(status: number, body: unknown): string {
       : undefined
 
   if (typeof message === 'string' && message.trim() !== '') {
-    if (status === 403) return `Akses ditolak: ${message}`
-    if (status === 404) return `Project tidak ditemukan: ${message}`
+    if (status === 403) return `Access denied: ${message}`
+    if (status === 404) return `Project not found: ${message}`
     return message
   }
 
   switch (status) {
     case 400:
-      return 'Source Code tidak valid — periksa panjangnya lalu coba lagi.'
+      return 'Invalid Source Code — check its length and try again.'
     case 403:
-      return 'Akses ditolak. Hanya Admin yang boleh mengubah Source Code.'
+      return 'Access denied. Only Admins may modify Source Code.'
     case 404:
-      return 'Project tidak ditemukan. Mungkin sudah dihapus — muat ulang halaman.'
+      return 'Project not found. It may have been deleted — reload the page.'
     case 429:
-      return 'Terlalu banyak permintaan. Tunggu sebentar lalu coba lagi.'
+      return 'Too many requests. Please wait a moment and try again.'
     default:
-      return `Gagal menyimpan (HTTP ${status}).`
+      return `Failed to save (HTTP ${status}).`
   }
 }

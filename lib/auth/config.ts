@@ -20,11 +20,11 @@ import type { Role } from '@prisma/client'
 const LoginSchema = z.object({
   email: z
     .string()
-    .min(1, { message: 'Email wajib diisi.' })
-    .email({ message: 'Format email tidak valid.' }),
+    .min(1, { message: 'Email is required.' })
+    .email({ message: 'Invalid email format.' }),
   password: z
     .string()
-    .min(1, { message: 'Password tidak boleh kosong.' }),
+    .min(1, { message: 'Password cannot be empty.' }),
 })
 
 // ---------------------------------------------------------------------------

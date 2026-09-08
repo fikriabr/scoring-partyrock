@@ -44,7 +44,7 @@ export default function SignOutButton({
       className={styles[variant]}
     >
       <span aria-hidden="true">↩</span>
-      {loading ? 'Keluar...' : 'Keluar'}
+      {loading ? 'Signing out...' : 'Sign Out'}
     </button>
   )
 }

@@ -29,13 +29,13 @@ export default function LoginPage() {
       })
 
       if (result?.error) {
-        setError('Email atau password salah.')
+        setError('Incorrect email or password.')
       } else if (result?.url) {
         // Successful login — redirect to callback URL
         window.location.href = result.url
       }
     } catch {
-      setError('Terjadi kesalahan. Silakan coba lagi.')
+      setError('An error occurred. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -134,10 +134,10 @@ export default function LoginPage() {
                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
                   />
                 </svg>
-                Memproses...
+                Processing...
               </span>
             ) : (
-              'Masuk'
+              'Sign In'
             )}
           </button>
         </form>

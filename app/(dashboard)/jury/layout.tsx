@@ -42,7 +42,7 @@ export default async function JuryLayout({
         <div className="border-t border-indigo-700/60 pt-4 space-y-3">
           <div className="truncate">
             <p className="truncate text-sm font-medium">
-              {session.user.name || 'Juri'}
+              {session.user.name || 'Jury'}
             </p>
             <p className="truncate text-xs text-indigo-300">
               {session.user.email}

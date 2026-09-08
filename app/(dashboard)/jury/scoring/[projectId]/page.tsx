@@ -59,13 +59,13 @@ export default async function JuryScoringPage({
       <div>
         <h1 className="text-2xl font-bold mb-4">Access Denied</h1>
         <p className="text-red-600">
-          Anda tidak ditugaskan untuk menilai project di kategori ini.
+          You are not assigned to score projects in this category.
         </p>
         <Link
           href="/jury/projects"
           className="mt-4 inline-block text-blue-600 hover:underline"
         >
-          &larr; Kembali ke daftar project
+          &larr; Back to project list
         </Link>
       </div>
     )
@@ -74,9 +74,7 @@ export default async function JuryScoringPage({
   // Prepare data for the client component
   const parameters = project.category.parameters.map((param) => {
     const aiScore = project.aiScores.find((s) => s.parameterId === param.id)
-    const juryScore = project.juryScores.find(
-      (s) => s.parameterId === param.id,
-    )
+    const juryScore = project.juryScores.find((s) => s.parameterId === param.id)
 
     return {
       id: param.id,
@@ -112,14 +110,14 @@ export default async function JuryScoringPage({
         href="/jury/projects"
         className="text-blue-600 hover:underline text-sm"
       >
-        &larr; Kembali ke daftar project
+        &larr; Back to project list
       </Link>
 
       {/* Project header */}
       <div className="mt-4 mb-6">
         <h1 className="text-2xl font-bold">{project.participantName}</h1>
         {project.teamName && (
-          <p className="text-sm text-gray-500">Tim: {project.teamName}</p>
+          <p className="text-sm text-gray-500">Team: {project.teamName}</p>
         )}
         <a
           href={project.url}
@@ -138,14 +136,10 @@ export default async function JuryScoringPage({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <p className="text-sm font-medium text-gray-700">Title</p>
-              <p className="text-sm text-gray-900">
-                {metadata.title ?? 'N/A'}
-              </p>
+              <p className="text-sm text-gray-900">{metadata.title ?? 'N/A'}</p>
             </div>
             <div>
-              <p className="text-sm font-medium text-gray-700">
-                Widget Count
-              </p>
+              <p className="text-sm font-medium text-gray-700">Widget Count</p>
               <p className="text-sm text-gray-900">{metadata.widgetCount}</p>
             </div>
             <div className="md:col-span-2">
@@ -181,7 +175,9 @@ export default async function JuryScoringPage({
               <ul className="list-disc list-inside text-sm text-gray-700 space-y-1">
                 {metadata.prompts.map((prompt, i) => (
                   <li key={i} className="break-all">
-                    {prompt || <span className="italic text-gray-400">empty</span>}
+                    {prompt || (
+                      <span className="italic text-gray-400">empty</span>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -190,7 +186,7 @@ export default async function JuryScoringPage({
         </div>
       ) : (
         <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded text-yellow-800 text-sm">
-          Crawl metadata belum tersedia untuk project ini. Status crawl:{' '}
+          Crawl metadata is not available for this project yet. Crawl status:{' '}
           <span className="font-medium">{project.crawlStatus}</span>
         </div>
       )}

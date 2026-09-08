@@ -85,13 +85,13 @@ export default function JuryScoringForm({
 
       // Client-side validation
       if (isNaN(scoreValue)) {
-        updateState(param.id, { error: 'Masukkan skor yang valid', success: null })
+        updateState(param.id, { error: 'Enter a valid score', success: null })
         return
       }
 
       if (scoreValue < param.minScore || scoreValue > param.maxScore) {
         updateState(param.id, {
-          error: `Skor harus antara ${param.minScore} dan ${param.maxScore}`,
+          error: `Score must be between ${param.minScore} and ${param.maxScore}`,
           success: null,
         })
         return
@@ -101,7 +101,7 @@ export default function JuryScoringForm({
       if (isCommentRequired(param, scoreValue) && !state.comment.trim()) {
         updateState(param.id, {
           error:
-            'Komentar wajib diisi karena skor berbeda lebih dari 20% dari rentang nilai dibandingkan Skor AI',
+            'A comment is required because the score differs by more than 20% of the value range compared to the AI Score',
           success: null,
         })
         return
@@ -124,7 +124,7 @@ export default function JuryScoringForm({
           const data = await res.json()
           if (res.status === 403) {
             updateState(param.id, {
-              error: 'Anda tidak memiliki akses untuk menilai project ini',
+              error: 'You do not have access to score this project',
               submitting: false,
             })
           } else if (res.status === 400) {
@@ -134,7 +134,7 @@ export default function JuryScoringForm({
             })
           } else {
             updateState(param.id, {
-              error: data.message || 'Terjadi kesalahan',
+              error: data.message || 'An error occurred',
               submitting: false,
             })
           }
@@ -143,12 +143,12 @@ export default function JuryScoringForm({
 
         updateState(param.id, {
           submitting: false,
-          success: 'Skor berhasil disimpan',
+          success: 'Score saved successfully',
           error: null,
         })
       } catch {
         updateState(param.id, {
-          error: 'Gagal mengirim skor. Coba lagi.',
+          error: 'Failed to submit score. Please try again.',
           submitting: false,
         })
       }
@@ -172,7 +172,7 @@ export default function JuryScoringForm({
           const data = await res.json()
           if (res.status === 403) {
             updateState(param.id, {
-              error: 'Anda tidak memiliki akses untuk menilai project ini',
+              error: 'You do not have access to score this project',
               accepting: false,
             })
           } else if (res.status === 400) {
@@ -182,7 +182,7 @@ export default function JuryScoringForm({
             })
           } else {
             updateState(param.id, {
-              error: data.message || 'Terjadi kesalahan',
+              error: data.message || 'An error occurred',
               accepting: false,
             })
           }
@@ -192,14 +192,14 @@ export default function JuryScoringForm({
         // Update local state to reflect accepted score
         updateState(param.id, {
           accepting: false,
-          success: 'Skor AI diterima',
+          success: 'AI Score accepted',
           error: null,
           score: param.aiScore !== null ? String(param.aiScore) : '',
           comment: '',
         })
       } catch {
         updateState(param.id, {
-          error: 'Gagal menerima skor AI. Coba lagi.',
+          error: 'Failed to accept AI score. Please try again.',
           accepting: false,
         })
       }
@@ -210,14 +210,14 @@ export default function JuryScoringForm({
   if (parameters.length === 0) {
     return (
       <div className="p-4 bg-yellow-50 border border-yellow-200 rounded text-yellow-800 text-sm">
-        Belum ada parameter penilaian yang dikonfigurasi untuk kategori ini.
+        No scoring parameters have been configured for this category yet.
       </div>
     )
   }
 
   return (
     <div className="space-y-6">
-      <h2 className="text-lg font-semibold">Penilaian Per Parameter</h2>
+      <h2 className="text-lg font-semibold">Scoring Per Parameter</h2>
 
       {parameters.map((param) => {
         const state = states[param.id]
@@ -243,7 +243,7 @@ export default function JuryScoringForm({
                 )}
               </div>
               <span className="text-sm font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                Bobot: {param.weight}%
+                Weight: {param.weight}%
               </span>
             </div>
 
@@ -252,13 +252,13 @@ export default function JuryScoringForm({
               <div className="mb-4 p-3 bg-blue-50 border border-blue-100 rounded">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-sm font-medium text-blue-800">
-                    Skor AI:
+                    AI Score:
                   </span>
                   <span className="text-lg font-bold text-blue-900">
                     {param.aiScore}
                   </span>
                   <span className="text-xs text-blue-600">
-                    (rentang: {param.minScore} — {param.maxScore})
+                    (range: {param.minScore} — {param.maxScore})
                   </span>
                 </div>
                 {param.aiReasoning && (
@@ -270,7 +270,7 @@ export default function JuryScoringForm({
             ) : (
               <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded">
                 <p className="text-sm text-gray-500 italic">
-                  Belum ada Skor AI untuk parameter ini.
+                  No AI Score for this parameter yet.
                 </p>
               </div>
             )}
@@ -278,7 +278,7 @@ export default function JuryScoringForm({
             {/* Existing jury score indicator */}
             {param.juryScore !== null && (
               <div className="mb-3 text-sm text-green-700 bg-green-50 border border-green-100 rounded px-3 py-2">
-                Skor juri sebelumnya:{' '}
+                Previous jury score:{' '}
                 <span className="font-semibold">{param.juryScore}</span>
                 {param.juryComment && (
                   <span className="ml-2 text-gray-600">
@@ -295,7 +295,7 @@ export default function JuryScoringForm({
                   htmlFor={`score-${param.id}`}
                   className="block text-sm font-medium text-gray-700 mb-1"
                 >
-                  Skor Anda ({param.minScore} — {param.maxScore})
+                  Your Score ({param.minScore} — {param.maxScore})
                 </label>
                 <input
                   id={`score-${param.id}`}
@@ -324,7 +324,7 @@ export default function JuryScoringForm({
                     htmlFor={`comment-${param.id}`}
                     className="block text-sm font-medium text-red-700 mb-1"
                   >
-                    Komentar (wajib — skor berbeda &gt;20% dari Skor AI)
+                    Comment (required — score differs &gt;20% from AI Score)
                   </label>
                   <textarea
                     id={`comment-${param.id}`}
@@ -338,7 +338,7 @@ export default function JuryScoringForm({
                     }
                     rows={2}
                     className="w-full px-3 py-2 border border-red-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
-                    placeholder="Jelaskan alasan perbedaan skor..."
+                    placeholder="Explain the reason for the score difference..."
                     disabled={state.submitting || state.accepting}
                   />
                 </div>
@@ -351,7 +351,7 @@ export default function JuryScoringForm({
                     htmlFor={`comment-opt-${param.id}`}
                     className="block text-sm font-medium text-gray-700 mb-1"
                   >
-                    Komentar (opsional)
+                    Comment (optional)
                   </label>
                   <input
                     id={`comment-opt-${param.id}`}
@@ -365,7 +365,7 @@ export default function JuryScoringForm({
                       })
                     }
                     className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder="Komentar (opsional)"
+                    placeholder="Comment (optional)"
                     disabled={state.submitting || state.accepting}
                   />
                 </div>
@@ -379,7 +379,7 @@ export default function JuryScoringForm({
                 disabled={state.submitting || state.accepting || !state.score}
                 className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {state.submitting ? 'Menyimpan...' : 'Submit Score'}
+                {state.submitting ? 'Saving...' : 'Submit Score'}
               </button>
 
               {param.aiScore !== null && (

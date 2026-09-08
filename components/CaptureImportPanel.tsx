@@ -27,7 +27,10 @@ export default function CaptureImportPanel({
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [json, setJson] = useState('')
-  const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+  const [message, setMessage] = useState<{
+    kind: 'ok' | 'error'
+    text: string
+  } | null>(null)
   const [scriptCopied, setScriptCopied] = useState(false)
 
   async function copyCaptureScript() {
@@ -40,7 +43,7 @@ export default function CaptureImportPanel({
     } catch {
       setMessage({
         kind: 'error',
-        text: 'Gagal menyalin script. Buka /partyrock-capture.js di tab baru lalu salin manual.',
+        text: 'Failed to copy the script. Open /partyrock-capture.js in a new tab and copy it manually.',
       })
     }
   }
@@ -52,7 +55,10 @@ export default function CaptureImportPanel({
     try {
       parsed = JSON.parse(json)
     } catch {
-      setMessage({ kind: 'error', text: 'JSON tidak valid — pastikan seluruh isi tersalin.' })
+      setMessage({
+        kind: 'error',
+        text: 'Invalid JSON — make sure the entire content was copied.',
+      })
       return
     }
 
@@ -72,33 +78,44 @@ export default function CaptureImportPanel({
         const body = await res.json()
 
         if (!res.ok) {
-          setMessage({ kind: 'error', text: body.message || 'Import gagal.' })
+          setMessage({ kind: 'error', text: body.message || 'Import failed.' })
           return
         }
 
-        setMessage({ kind: 'ok', text: body.message || 'Capture tersimpan.' })
+        setMessage({ kind: 'ok', text: body.message || 'Capture saved.' })
         setJson('')
         router.refresh()
       } catch {
-        setMessage({ kind: 'error', text: 'Network error. Coba lagi.' })
+        setMessage({ kind: 'error', text: 'Network error. Please try again.' })
       }
     })
   }
 
   return (
     <div className="rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-100">
-      <h3 className="text-sm font-semibold text-gray-900">Import Capture Manual</h3>
+      <h3 className="text-sm font-semibold text-gray-900">
+        Manual Capture Import
+      </h3>
       <p className="mt-1 text-sm text-gray-500">
-        Widget dan prompt PartyRock hanya terlihat di sesi browser yang login. Cara
-        normal: jalankan <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">npm run capture</code>.
-        Panel ini untuk satu project saja.
+        PartyRock widgets and prompts are only visible in a logged-in browser
+        session. The normal way: run{' '}
+        <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">
+          npm run capture
+        </code>
+        . This panel is for a single project only.
       </p>
 
       <ol className="mt-4 space-y-1.5 text-sm text-gray-600 list-decimal list-inside">
-        <li>Salin script capture, buka halaman PartyRock project ini, tempel di DevTools console.</li>
-        <li>Klik widget-widget di app tersebut agar AI menghasilkan output.</li>
-        <li>Klik <span className="font-medium">Salin JSON</span> di panel kanan bawah.</li>
-        <li>Tempel hasilnya di kotak bawah ini, lalu Import.</li>
+        <li>
+          Copy the capture script, open this project&apos;s PartyRock page, and
+          paste it into the DevTools console.
+        </li>
+        <li>Click the widgets in that app so the AI produces output.</li>
+        <li>
+          Click <span className="font-medium">Copy JSON</span> in the panel at
+          the bottom right.
+        </li>
+        <li>Paste the result into the box below, then Import.</li>
       </ol>
 
       <div className="mt-4 flex flex-wrap gap-2">
@@ -107,7 +124,7 @@ export default function CaptureImportPanel({
           onClick={copyCaptureScript}
           className="rounded-lg bg-gray-100 px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-200"
         >
-          {scriptCopied ? 'Script tersalin' : 'Salin Script Capture'}
+          {scriptCopied ? 'Script copied' : 'Copy Capture Script'}
         </button>
         <a
           href={projectUrl}
@@ -115,7 +132,7 @@ export default function CaptureImportPanel({
           rel="noopener noreferrer"
           className="rounded-lg bg-gray-100 px-3 py-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-200"
         >
-          Buka Halaman PartyRock
+          Open PartyRock Page
         </a>
       </div>
 
@@ -135,7 +152,7 @@ export default function CaptureImportPanel({
           disabled={isPending || json.trim() === ''}
           className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {isPending ? 'Mengimpor...' : 'Import & Score Ulang'}
+          {isPending ? 'Importing...' : 'Import & Re-score'}
         </button>
 
         {message && (

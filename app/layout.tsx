@@ -6,7 +6,7 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: 'Scoring Project by PindAI',
-  description: 'Sistem penjurian project berbasis web dari berbagai platform',
+  description: 'Web-based project judging system for various platforms',
 }
 
 export default function RootLayout({
