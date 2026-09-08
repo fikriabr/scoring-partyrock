@@ -42,15 +42,16 @@ type Project = GroupableProject & { id: string; createdAt: number }
 const CATEGORY_POOL: ReadonlyArray<{
   categoryId: string
   categoryName: string
+  categoryCreatedAt: string
   eventName: string
 }> = [
-  { categoryId: 'c-ai-2025', categoryName: 'AI Track', eventName: 'Hackathon 2025' },
-  { categoryId: 'c-web-2025', categoryName: 'web track', eventName: 'Hackathon 2025' },
-  { categoryId: 'c-ai-2024', categoryName: 'ai track', eventName: 'Hackathon 2024' },
-  { categoryId: 'c-design-2024', categoryName: 'Design', eventName: 'hackathon 2024' },
-  { categoryId: 'c-alpha', categoryName: 'Zebra', eventName: 'Alpha Event' },
-  { categoryId: 'c-beta', categoryName: 'apple', eventName: 'beta event' },
-]
+    { categoryId: 'c-ai-2025', categoryName: 'AI Track', categoryCreatedAt: '2025-01-01T00:00:00.000Z', eventName: 'Hackathon 2025' },
+    { categoryId: 'c-web-2025', categoryName: 'web track', categoryCreatedAt: '2025-02-01T00:00:00.000Z', eventName: 'Hackathon 2025' },
+    { categoryId: 'c-ai-2024', categoryName: 'ai track', categoryCreatedAt: '2025-03-01T00:00:00.000Z', eventName: 'Hackathon 2024' },
+    { categoryId: 'c-design-2024', categoryName: 'Design', categoryCreatedAt: '2025-04-01T00:00:00.000Z', eventName: 'hackathon 2024' },
+    { categoryId: 'c-alpha', categoryName: 'Zebra', categoryCreatedAt: '2025-05-01T00:00:00.000Z', eventName: 'Alpha Event' },
+    { categoryId: 'c-beta', categoryName: 'apple', categoryCreatedAt: '2025-06-01T00:00:00.000Z', eventName: 'beta event' },
+  ]
 
 /** Generates a single project drawn from the category pool. */
 const projectArb = (id: string): fc.Arbitrary<Project> =>
@@ -61,6 +62,7 @@ const projectArb = (id: string): fc.Arbitrary<Project> =>
     id,
     categoryId: category.categoryId,
     categoryName: category.categoryName,
+    categoryCreatedAt: category.categoryCreatedAt,
     eventName: category.eventName,
     createdAt,
   }))
@@ -79,6 +81,7 @@ const nonEmptyProjectsArb: fc.Arbitrary<Project[]> = fc
           id: `p${i}`,
           categoryId: category.categoryId,
           categoryName: category.categoryName,
+          categoryCreatedAt: category.categoryCreatedAt,
           eventName: category.eventName,
           createdAt,
         })),
@@ -149,7 +152,7 @@ describe('Property 1: projects grouped per category [**Validates: Requirements 2
     )
   })
 
-  it('orders groups monotonically non-decreasing by (eventName, categoryName) case-insensitive', () => {
+  it('orders groups by categoryCreatedAt, with (eventName, categoryName) as tie-break', () => {
     fc.assert(
       fc.property(nonEmptyProjectsArb, (projects) => {
         const groups = groupProjectsByCategory(projects)
@@ -157,15 +160,22 @@ describe('Property 1: projects grouped per category [**Validates: Requirements 2
         for (let i = 1; i < groups.length; i++) {
           const prev = groups[i - 1]
           const cur = groups[i]
-          const byEvent = ciCompare(prev.eventName, cur.eventName)
-          if (byEvent !== 0) {
-            // Event names must be non-decreasing (2.4).
-            expect(byEvent).toBeLessThan(0)
+          const byCreated = prev.categoryCreatedAt.localeCompare(
+            cur.categoryCreatedAt,
+          )
+          if (byCreated !== 0) {
+            // Creation time must be non-increasing (newest category first).
+            expect(byCreated).toBeGreaterThan(0)
           } else {
-            // Same event → category names must be non-decreasing (2.4).
-            expect(ciCompare(prev.categoryName, cur.categoryName)).toBeLessThan(
-              0,
-            )
+            // Same createdAt → fall back to event, then category name.
+            const byEvent = ciCompare(prev.eventName, cur.eventName)
+            if (byEvent !== 0) {
+              expect(byEvent).toBeLessThan(0)
+            } else {
+              expect(
+                ciCompare(prev.categoryName, cur.categoryName),
+              ).toBeLessThan(0)
+            }
           }
         }
       }),

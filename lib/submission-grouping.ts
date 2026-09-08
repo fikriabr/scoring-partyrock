@@ -17,6 +17,7 @@
 export type GroupableProject = {
   categoryId: string
   categoryName: string
+  categoryCreatedAt: string // ISO string of Category.createdAt
   eventName: string
 }
 
@@ -28,6 +29,7 @@ export type GroupableProject = {
 export type CategoryGroup<T> = {
   categoryId: string
   categoryName: string
+  categoryCreatedAt: string
   eventName: string
   heading: string // `${eventName} — ${categoryName}`
   projects: T[]
@@ -39,10 +41,10 @@ export type CategoryGroup<T> = {
  * Projects are collected into a `Map` keyed by `categoryId`; because `Map`
  * preserves insertion order per bucket and the input is already createdAt desc,
  * project order within each group is correct without any re-sort (2.5). The
- * resulting groups are then sorted by `eventName` then `categoryName`,
- * case-insensitively via `localeCompare(..., undefined, { sensitivity: 'base' })`
- * (2.4). Categories with no projects never enter the map, so they never produce
- * a group (2.6).
+ * resulting groups are then sorted by `categoryCreatedAt` (newest category
+ * first), with `eventName` then `categoryName` as a deterministic tie-break.
+ * Categories with no projects never enter the map, so they never produce a
+ * group (2.6).
  */
 export function groupProjectsByCategory<T extends GroupableProject>(
   projects: T[],
@@ -55,6 +57,7 @@ export function groupProjectsByCategory<T extends GroupableProject>(
       group = {
         categoryId: project.categoryId,
         categoryName: project.categoryName,
+        categoryCreatedAt: project.categoryCreatedAt,
         eventName: project.eventName,
         heading: `${project.eventName} — ${project.categoryName}`,
         projects: [],
@@ -65,6 +68,14 @@ export function groupProjectsByCategory<T extends GroupableProject>(
   }
 
   return [...groups.values()].sort((a, b) => {
+    // Primary: order categories by when the Category was created, newest
+    // first. ISO 8601 strings sort chronologically under lexicographic
+    // comparison, so comparing b vs a gives descending (newest) order.
+    const byCreated = b.categoryCreatedAt.localeCompare(a.categoryCreatedAt)
+    if (byCreated !== 0) return byCreated
+
+    // Tie-break so the order stays deterministic when two categories share
+    // the same createdAt: event name, then category name (case-insensitive).
     const byEvent = a.eventName.localeCompare(b.eventName, undefined, {
       sensitivity: 'base',
     })

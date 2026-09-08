@@ -18,12 +18,25 @@ import {
 
 type Project = GroupableProject & { id: string }
 
+// A fixed default so tests that don't care about category-creation order all
+// share the same timestamp and fall through to the deterministic tie-break
+// (eventName, then categoryName). Tests that assert createdAt ordering pass an
+// explicit value.
+const DEFAULT_CATEGORY_CREATED_AT = '2025-01-01T00:00:00.000Z'
+
 const project = (
   id: string,
   categoryId: string,
   categoryName: string,
   eventName: string,
-): Project => ({ id, categoryId, categoryName, eventName })
+  categoryCreatedAt: string = DEFAULT_CATEGORY_CREATED_AT,
+): Project => ({
+  id,
+  categoryId,
+  categoryName,
+  categoryCreatedAt,
+  eventName,
+})
 
 describe('groupProjectsByCategory', () => {
   it('splits two interleaved categories into two groups with the right projects', () => {
@@ -75,9 +88,25 @@ describe('groupProjectsByCategory', () => {
     ])
   })
 
-  it('sorts groups by event then category name, case-insensitively', () => {
-    // Mixed capitalisation and insertion order that would sort wrongly under a
-    // naive case-sensitive comparison (uppercase before lowercase).
+  it('sorts groups by category creation time, newest first', () => {
+    // Categories created out of alphabetical order: the sort must follow
+    // createdAt, not the names. Insertion order here is also deliberately not
+    // the expected output order.
+    const projects: Project[] = [
+      project('p1', 'zebra', 'Zebra', 'Event', '2025-03-01T00:00:00.000Z'),
+      project('p2', 'apple', 'Apple', 'Event', '2025-01-01T00:00:00.000Z'),
+      project('p3', 'mango', 'Mango', 'Event', '2025-02-01T00:00:00.000Z'),
+    ]
+
+    const groups = groupProjectsByCategory(projects)
+
+    // zebra (Mar) → mango (Feb) → apple (Jan): newest category first.
+    expect(groups.map((g) => g.categoryId)).toEqual(['zebra', 'mango', 'apple'])
+  })
+
+  it('falls back to event then category name when createdAt is identical', () => {
+    // All share DEFAULT_CATEGORY_CREATED_AT, so the deterministic tie-break
+    // (event, then category name, case-insensitive) decides the order.
     const projects: Project[] = [
       project('p1', 'zebra', 'zebra', 'beta event'),
       project('p2', 'apple', 'Apple', 'Alpha Event'),
