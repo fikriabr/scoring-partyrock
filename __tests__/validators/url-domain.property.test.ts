@@ -8,102 +8,49 @@
  *   URL is well-formed and its domain starts with `partyrock.aws`. All other URLs
  *   SHALL be rejected with a validation error.
  *
- * Concretely, for a PartyRock submission the system accepts:
+ * Concretely, the system accepts:
  *   - Exact domain: `partyrock.aws`
  *   - Subdomains:   `*.partyrock.aws` (e.g. `app.partyrock.aws`)
  *
- * And rejects every other well-formed (or malformed) URL.
- *
- * ---------------------------------------------------------------------------
- * SCOPE UPDATE — `html-project-scoring`
- * ---------------------------------------------------------------------------
- * The submission schemas now carry a `projectType`, so the host rule above is
- * the rule for `projectType: PARTYROCK` specifically, not for every submission:
- *
- *   - `PARTYROCK` (also the default when the field is omitted): host must be
- *     `partyrock.aws` or `*.partyrock.aws` — Property 5 unchanged.
- *   - `HTML`: any hostname is accepted, so a non-PartyRock URL that Property 5
- *     rejects is legitimately accepted here.
- *   - Both types: only the `http:` and `https:` schemes are accepted. This is a
- *     tightening — `ftp://partyrock.aws/` used to slip through because the old
- *     refinement only inspected the hostname.
- *
- * These tests therefore assert Property 5 against `PARTYROCK` (explicit and
- * defaulted) and additionally pin the `HTML` contrast cases that would
- * otherwise make the PartyRock assertions look unconditional. The full
- * type-vs-host matrix, including the client-side check, belongs to Property 21
- * (`html-project-scoring`) and is not duplicated here.
+ * And rejects every other well-formed (or malformed) URL, and any parseable
+ * URL that does not use the `http:`/`https:` scheme.
  *
  * **Validates: Requirements 3.2**
  */
 
 import { describe, it, expect } from 'vitest'
 import * as fc from 'fast-check'
-import { ProjectType } from '@prisma/client'
 import { SubmissionSchema, CsvRowSchema } from '@/lib/validators/schemas'
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * `undefined` means "omit the field entirely", which must behave exactly like
- * `PARTYROCK` because that is the schema default (Requirement 8.1).
- */
-type ProjectTypeInput = ProjectType | undefined
-
-/** Only add `projectType` when a value was given, so `undefined` exercises the default. */
-function withProjectType(
-  payload: Record<string, unknown>,
-  projectType: ProjectTypeInput,
-): Record<string, unknown> {
-  return projectType === undefined ? payload : { ...payload, projectType }
-}
-
 /** Validate only the URL field of SubmissionSchema */
-function isUrlAcceptedBySubmission(url: string, projectType?: ProjectTypeInput): boolean {
-  const result = SubmissionSchema.safeParse(
-    withProjectType(
-      {
-        url,
-        participantName: 'Test Participant',
-        categoryId: 'clabcdef0001',
-      },
-      projectType,
-    ),
-  )
+function isUrlAcceptedBySubmission(url: string): boolean {
+  const result = SubmissionSchema.safeParse({
+    url,
+    participantName: 'Test Participant',
+    categoryId: 'clabcdef0001',
+  })
   return result.success
 }
 
 /** Validate only the URL field of CsvRowSchema */
-function isUrlAcceptedByCsv(url: string, projectType?: ProjectTypeInput): boolean {
-  const result = CsvRowSchema.safeParse(
-    withProjectType(
-      {
-        url,
-        participantName: 'Test Participant',
-        categoryId: 'clabcdef0001',
-        teamName: null,
-        sourceCode: null,
-      },
-      projectType,
-    ),
-  )
+function isUrlAcceptedByCsv(url: string): boolean {
+  const result = CsvRowSchema.safeParse({
+    url,
+    participantName: 'Test Participant',
+    categoryId: 'clabcdef0001',
+    teamName: null,
+    sourceCode: null,
+  })
   return result.success
 }
 
 // ---------------------------------------------------------------------------
 // Arbitraries
 // ---------------------------------------------------------------------------
-
-/**
- * The two inputs that must both mean "PartyRock submission": the explicit enum
- * value, and an omitted field falling back to the schema default.
- */
-const partyRockTypeArbitrary: fc.Arbitrary<ProjectTypeInput> = fc.constantFrom(
-  ProjectType.PARTYROCK,
-  undefined,
-)
 
 /** URL paths: e.g. '', '/', '/app/some-path', '/path?foo=bar' */
 const pathArbitrary = fc.oneof(
@@ -144,16 +91,10 @@ const subdomainPartyRockUrlArbitrary: fc.Arbitrary<string> = fc
   .tuple(subdomainLabelArbitrary, pathArbitrary)
   .map(([sub, path]) => `https://${sub}.partyrock.aws${path}`)
 
-/** Either form of an accepted PartyRock URL. */
-const anyPartyRockUrlArbitrary: fc.Arbitrary<string> = fc.oneof(
-  exactPartyRockUrlArbitrary,
-  subdomainPartyRockUrlArbitrary,
-)
-
 /**
  * Generates HTTPS URLs whose hostname is a completely different domain —
  * not partyrock.aws and not a subdomain of partyrock.aws.
- * These MUST fail validation for PARTYROCK, and MUST pass for HTML.
+ * These MUST fail validation.
  */
 const nonPartyRockDomainArbitrary: fc.Arbitrary<string> = fc
   .oneof(
@@ -182,8 +123,8 @@ const nonPartyRockDomainArbitrary: fc.Arbitrary<string> = fc
 
 /**
  * Generates parseable URLs that do not use the `http:`/`https:` scheme,
- * including PartyRock-hosted ones. These MUST fail validation for BOTH project
- * types: the host may be right, but the scheme never is.
+ * including PartyRock-hosted ones. These MUST fail validation: the host may
+ * be right, but the scheme never is.
  */
 const nonWebSchemeUrlArbitrary: fc.Arbitrary<string> = fc
   .tuple(
@@ -198,8 +139,8 @@ const nonWebSchemeUrlArbitrary: fc.Arbitrary<string> = fc
 
 /**
  * Generates strings that are clearly not valid URLs (unparseable or missing
- * scheme). These MUST fail validation for BOTH project types because
- * `validateProjectUrl` cannot parse them at all.
+ * scheme). These MUST fail validation because `validateProjectUrl` cannot
+ * parse them at all.
  *
  * Wrong-scheme-but-parseable inputs such as `ftp://partyrock.aws/app` live in
  * `nonWebSchemeUrlArbitrary` instead — they are rejected for a different
@@ -222,10 +163,10 @@ const malformedUrlArbitrary: fc.Arbitrary<string> = fc.oneof(
 )
 
 // ---------------------------------------------------------------------------
-// Tests — projectType: PARTYROCK (explicit or defaulted)
+// Tests
 // ---------------------------------------------------------------------------
 
-describe('Property 5: URL Domain Validation — SubmissionSchema (PARTYROCK)', () => {
+describe('Property 5: URL Domain Validation — SubmissionSchema', () => {
   /**
    * Property 5a (positive): Any well-formed HTTPS URL on partyrock.aws (exact)
    * MUST be accepted by SubmissionSchema.
@@ -234,8 +175,8 @@ describe('Property 5: URL Domain Validation — SubmissionSchema (PARTYROCK)', (
    */
   it('accepts any HTTPS URL on the exact partyrock.aws domain', () => {
     fc.assert(
-      fc.property(exactPartyRockUrlArbitrary, partyRockTypeArbitrary, (url, projectType) => {
-        expect(isUrlAcceptedBySubmission(url, projectType)).toBe(true)
+      fc.property(exactPartyRockUrlArbitrary, (url) => {
+        expect(isUrlAcceptedBySubmission(url)).toBe(true)
       }),
       { numRuns: 200 },
     )
@@ -249,8 +190,8 @@ describe('Property 5: URL Domain Validation — SubmissionSchema (PARTYROCK)', (
    */
   it('accepts any HTTPS URL on a *.partyrock.aws subdomain', () => {
     fc.assert(
-      fc.property(subdomainPartyRockUrlArbitrary, partyRockTypeArbitrary, (url, projectType) => {
-        expect(isUrlAcceptedBySubmission(url, projectType)).toBe(true)
+      fc.property(subdomainPartyRockUrlArbitrary, (url) => {
+        expect(isUrlAcceptedBySubmission(url)).toBe(true)
       }),
       { numRuns: 200 },
     )
@@ -264,8 +205,8 @@ describe('Property 5: URL Domain Validation — SubmissionSchema (PARTYROCK)', (
    */
   it('rejects any URL whose domain is not partyrock.aws or a subdomain thereof', () => {
     fc.assert(
-      fc.property(nonPartyRockDomainArbitrary, partyRockTypeArbitrary, (url, projectType) => {
-        expect(isUrlAcceptedBySubmission(url, projectType)).toBe(false)
+      fc.property(nonPartyRockDomainArbitrary, (url) => {
+        expect(isUrlAcceptedBySubmission(url)).toBe(false)
       }),
       { numRuns: 200 },
     )
@@ -278,8 +219,8 @@ describe('Property 5: URL Domain Validation — SubmissionSchema (PARTYROCK)', (
    */
   it('rejects malformed or non-URL strings', () => {
     fc.assert(
-      fc.property(malformedUrlArbitrary, partyRockTypeArbitrary, (url, projectType) => {
-        expect(isUrlAcceptedBySubmission(url, projectType)).toBe(false)
+      fc.property(malformedUrlArbitrary, (url) => {
+        expect(isUrlAcceptedBySubmission(url)).toBe(false)
       }),
       { numRuns: 100 },
     )
@@ -294,15 +235,15 @@ describe('Property 5: URL Domain Validation — SubmissionSchema (PARTYROCK)', (
    */
   it('rejects PartyRock URLs that do not use the http or https scheme', () => {
     fc.assert(
-      fc.property(nonWebSchemeUrlArbitrary, partyRockTypeArbitrary, (url, projectType) => {
-        expect(isUrlAcceptedBySubmission(url, projectType)).toBe(false)
+      fc.property(nonWebSchemeUrlArbitrary, (url) => {
+        expect(isUrlAcceptedBySubmission(url)).toBe(false)
       }),
       { numRuns: 200 },
     )
   })
 })
 
-describe('Property 5: URL Domain Validation — CsvRowSchema (PARTYROCK)', () => {
+describe('Property 5: URL Domain Validation — CsvRowSchema', () => {
   /**
    * CsvRowSchema must apply the same URL domain logic as SubmissionSchema.
    *
@@ -310,8 +251,8 @@ describe('Property 5: URL Domain Validation — CsvRowSchema (PARTYROCK)', () =>
    */
   it('accepts any HTTPS URL on the exact partyrock.aws domain', () => {
     fc.assert(
-      fc.property(exactPartyRockUrlArbitrary, partyRockTypeArbitrary, (url, projectType) => {
-        expect(isUrlAcceptedByCsv(url, projectType)).toBe(true)
+      fc.property(exactPartyRockUrlArbitrary, (url) => {
+        expect(isUrlAcceptedByCsv(url)).toBe(true)
       }),
       { numRuns: 200 },
     )
@@ -319,8 +260,8 @@ describe('Property 5: URL Domain Validation — CsvRowSchema (PARTYROCK)', () =>
 
   it('accepts any HTTPS URL on a *.partyrock.aws subdomain', () => {
     fc.assert(
-      fc.property(subdomainPartyRockUrlArbitrary, partyRockTypeArbitrary, (url, projectType) => {
-        expect(isUrlAcceptedByCsv(url, projectType)).toBe(true)
+      fc.property(subdomainPartyRockUrlArbitrary, (url) => {
+        expect(isUrlAcceptedByCsv(url)).toBe(true)
       }),
       { numRuns: 200 },
     )
@@ -328,8 +269,8 @@ describe('Property 5: URL Domain Validation — CsvRowSchema (PARTYROCK)', () =>
 
   it('rejects any URL whose domain is not partyrock.aws or a subdomain thereof', () => {
     fc.assert(
-      fc.property(nonPartyRockDomainArbitrary, partyRockTypeArbitrary, (url, projectType) => {
-        expect(isUrlAcceptedByCsv(url, projectType)).toBe(false)
+      fc.property(nonPartyRockDomainArbitrary, (url) => {
+        expect(isUrlAcceptedByCsv(url)).toBe(false)
       }),
       { numRuns: 200 },
     )
@@ -337,8 +278,8 @@ describe('Property 5: URL Domain Validation — CsvRowSchema (PARTYROCK)', () =>
 
   it('rejects malformed or non-URL strings', () => {
     fc.assert(
-      fc.property(malformedUrlArbitrary, partyRockTypeArbitrary, (url, projectType) => {
-        expect(isUrlAcceptedByCsv(url, projectType)).toBe(false)
+      fc.property(malformedUrlArbitrary, (url) => {
+        expect(isUrlAcceptedByCsv(url)).toBe(false)
       }),
       { numRuns: 100 },
     )
@@ -346,81 +287,10 @@ describe('Property 5: URL Domain Validation — CsvRowSchema (PARTYROCK)', () =>
 
   it('rejects PartyRock URLs that do not use the http or https scheme', () => {
     fc.assert(
-      fc.property(nonWebSchemeUrlArbitrary, partyRockTypeArbitrary, (url, projectType) => {
-        expect(isUrlAcceptedByCsv(url, projectType)).toBe(false)
-      }),
-      { numRuns: 200 },
-    )
-  })
-})
-
-// ---------------------------------------------------------------------------
-// Tests — projectType: HTML
-//
-// The contrast cases that keep the assertions above from reading as
-// unconditional. The exhaustive matrix is Property 21's job.
-// ---------------------------------------------------------------------------
-
-describe('Property 5 scope: projectType HTML lifts the partyrock.aws host rule', () => {
-  /**
-   * The same URLs Property 5c rejects MUST be accepted once the submission is
-   * declared an HTML project — the host restriction is PartyRock-specific.
-   *
-   * **Validates: Requirements 3.2**
-   */
-  it('accepts non-PartyRock HTTPS URLs that PARTYROCK rejects', () => {
-    fc.assert(
-      fc.property(nonPartyRockDomainArbitrary, (url) => {
-        expect(isUrlAcceptedBySubmission(url, ProjectType.HTML)).toBe(true)
-        expect(isUrlAcceptedByCsv(url, ProjectType.HTML)).toBe(true)
-      }),
-      { numRuns: 200 },
-    )
-  })
-
-  /**
-   * Lifting the restriction must not turn into a new one: PartyRock URLs stay
-   * valid for HTML projects too.
-   *
-   * **Validates: Requirements 3.2**
-   */
-  it('still accepts PartyRock URLs', () => {
-    fc.assert(
-      fc.property(anyPartyRockUrlArbitrary, (url) => {
-        expect(isUrlAcceptedBySubmission(url, ProjectType.HTML)).toBe(true)
-        expect(isUrlAcceptedByCsv(url, ProjectType.HTML)).toBe(true)
-      }),
-      { numRuns: 200 },
-    )
-  })
-
-  /**
-   * The scheme restriction is type-independent, so HTML gets no relief there.
-   *
-   * **Validates: Requirements 3.2**
-   */
-  it('rejects URLs that do not use the http or https scheme', () => {
-    fc.assert(
       fc.property(nonWebSchemeUrlArbitrary, (url) => {
-        expect(isUrlAcceptedBySubmission(url, ProjectType.HTML)).toBe(false)
-        expect(isUrlAcceptedByCsv(url, ProjectType.HTML)).toBe(false)
+        expect(isUrlAcceptedByCsv(url)).toBe(false)
       }),
       { numRuns: 200 },
-    )
-  })
-
-  /**
-   * Neither does the "must parse as a URL" requirement.
-   *
-   * **Validates: Requirements 3.2**
-   */
-  it('rejects malformed or non-URL strings', () => {
-    fc.assert(
-      fc.property(malformedUrlArbitrary, (url) => {
-        expect(isUrlAcceptedBySubmission(url, ProjectType.HTML)).toBe(false)
-        expect(isUrlAcceptedByCsv(url, ProjectType.HTML)).toBe(false)
-      }),
-      { numRuns: 100 },
     )
   })
 })
@@ -430,7 +300,6 @@ describe('Property 5 scope: projectType HTML lifts the partyrock.aws host rule',
 // ---------------------------------------------------------------------------
 
 describe('Property 5: URL Domain Validation — deterministic edge cases', () => {
-  /** Accepted for every project type. */
   const partyRockUrls = [
     'https://partyrock.aws',
     'https://partyrock.aws/',
@@ -442,7 +311,6 @@ describe('Property 5: URL Domain Validation — deterministic edge cases', () =>
     'https://sub.partyrock.aws/app/abc?x=1',
   ]
 
-  /** Rejected for PARTYROCK (wrong host), accepted for HTML (any host allowed). */
   const nonPartyRockWebUrls = [
     'https://google.com',
     'https://amazon.com',
@@ -453,10 +321,10 @@ describe('Property 5: URL Domain Validation — deterministic edge cases', () =>
     // partyrock.aws embedded in the hostname or the path but not as the host
     'https://partyrock.aws.evil.com', // hostname is partyrock.aws.evil.com
     'https://evil.com/partyrock.aws', // partyrock.aws is just a path segment
-    'http://example.com/index.html',  // plain http is allowed
+    'http://example.com/index.html',
   ]
 
-  /** Rejected for every project type: unparseable, or a non-http(s) scheme. */
+  /** Rejected: unparseable, or a non-http(s) scheme. */
   const alwaysRejectedUrls = [
     // malformed
     'partyrock.aws',
@@ -472,31 +340,18 @@ describe('Property 5: URL Domain Validation — deterministic edge cases', () =>
     'data:text/html,<h1>hi</h1>',
   ]
 
-  it.each(partyRockUrls)('accepts for both project types: %s', (url) => {
+  it.each(partyRockUrls)('accepts: %s', (url) => {
     expect(isUrlAcceptedBySubmission(url)).toBe(true)
     expect(isUrlAcceptedByCsv(url)).toBe(true)
-    expect(isUrlAcceptedBySubmission(url, ProjectType.PARTYROCK)).toBe(true)
-    expect(isUrlAcceptedByCsv(url, ProjectType.PARTYROCK)).toBe(true)
-    expect(isUrlAcceptedBySubmission(url, ProjectType.HTML)).toBe(true)
-    expect(isUrlAcceptedByCsv(url, ProjectType.HTML)).toBe(true)
   })
 
-  it.each(nonPartyRockWebUrls)('rejects for PARTYROCK, accepts for HTML: %s', (url) => {
-    // default (field omitted) behaves as PARTYROCK
+  it.each(nonPartyRockWebUrls)('rejects (wrong domain): %s', (url) => {
     expect(isUrlAcceptedBySubmission(url)).toBe(false)
     expect(isUrlAcceptedByCsv(url)).toBe(false)
-    expect(isUrlAcceptedBySubmission(url, ProjectType.PARTYROCK)).toBe(false)
-    expect(isUrlAcceptedByCsv(url, ProjectType.PARTYROCK)).toBe(false)
-    expect(isUrlAcceptedBySubmission(url, ProjectType.HTML)).toBe(true)
-    expect(isUrlAcceptedByCsv(url, ProjectType.HTML)).toBe(true)
   })
 
-  it.each(alwaysRejectedUrls)('rejects for both project types: %s', (url) => {
+  it.each(alwaysRejectedUrls)('rejects: %s', (url) => {
     expect(isUrlAcceptedBySubmission(url)).toBe(false)
     expect(isUrlAcceptedByCsv(url)).toBe(false)
-    expect(isUrlAcceptedBySubmission(url, ProjectType.PARTYROCK)).toBe(false)
-    expect(isUrlAcceptedByCsv(url, ProjectType.PARTYROCK)).toBe(false)
-    expect(isUrlAcceptedBySubmission(url, ProjectType.HTML)).toBe(false)
-    expect(isUrlAcceptedByCsv(url, ProjectType.HTML)).toBe(false)
   })
 })

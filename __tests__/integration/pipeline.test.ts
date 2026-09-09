@@ -2,30 +2,14 @@
  * Integration Tests: Submission → Crawl → Score Pipeline
  *
  * **Validates: Requirements 4.1, 4.4, 5.1, 5.8** (spec `partyrock-assessment-tool`)
- * **Validates: Requirements 3.1, 3.2, 3.5, 3.6, 4.1, 4.2, 4.6, 8.2** (spec `html-project-scoring`)
  *
- * Requirement numbers are namespaced by spec because the two specs number
- * independently — "4.1" means the AI prompt template in one and the crawl
- * trigger in the other.
- *
- * PartyRock pipeline:
- *   1. Happy path: submit → crawl succeeds → AI score succeeds
- *   2. Crawl timeout failure: crawlStatus = FAILED, scoring NOT triggered
- *   3. Scoring partial failure: scoreStatus = PARTIAL, finalScore from successful params
- *   4. Regression: the prompt reaching Gemini is still the PartyRock template
- *
- * HTML pipeline (the same status machine, different evidence):
- *   5. Happy path: submit an HTML project → the fetched markup lands in
- *      `CrawlMetadata.rawHtml`, `structure` is derived from it, `sourceCode` is
- *      filled because it started empty, and scoring runs off the HTML prompt
- *   6. Failed fetch with Source Code already pasted: crawlStatus = FAILED with
- *      its error, yet scoring still completes from that Source Code
- *   7. No evidence anywhere: scoreStatus = FAILED and Gemini is never called
+ * 1. Happy path: submit → crawl succeeds → AI score succeeds
+ * 2. Crawl timeout failure: crawlStatus = FAILED, scoring NOT triggered
+ * 3. Scoring partial failure: scoreStatus = PARTIAL, finalScore from successful params
+ * 4. Regression: the prompt reaching Gemini is the PartyRock template
  *
  * All external dependencies (the crawler's HTTP fetch, Google Gemini, Prisma
- * DB, next/cache) are mocked to isolate pipeline logic. The HTML Structure
- * Extractor is deliberately NOT mocked — it is a pure function, so the metrics
- * asserted below are the real ones the pipeline computes.
+ * DB, next/cache) are mocked to isolate pipeline logic.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -81,51 +65,6 @@ function mockFetchHtmlOnce(html: string) {
   })
 }
 
-/**
- * A real page for the HTML pipeline to measure.
- *
- * Written to exercise every metric family the extractor reports — landmarks,
- * heading hierarchy, alt text, form labels, document metadata — so the
- * assertions below can check that the metrics travelling through the pipeline
- * are the page's own, not placeholders.
- */
-const HTML_PROJECT_DOC = `<!DOCTYPE html>
-<html lang="id">
-  <head>
-    <title>Portofolio Rani</title>
-    <meta name="description" content="Portofolio desainer produk">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="/styles.css">
-  </head>
-  <body>
-    <a href="#main-content">Lompat ke konten</a>
-    <header>
-      <nav aria-label="Navigasi utama"><a href="/karya">Karya</a></nav>
-    </header>
-    <main id="main-content">
-      <h1>Rani Puspita</h1>
-      <h2>Karya Terpilih</h2>
-      <img src="/karya-1.png" alt="Tangkapan layar aplikasi kasir">
-      <form>
-        <label for="email">Email</label>
-        <input id="email" type="email" name="email">
-      </form>
-      <div><span>catatan kecil</span></div>
-    </main>
-    <footer>© 2024 Rani</footer>
-    <script src="/app.js"></script>
-  </body>
-</html>`
-
-const HTML_PROJECT_URL = 'https://rani.example.com/portfolio'
-
-/** Markup an Admin pasted by hand — deliberately different from the fetched doc. */
-const PASTED_HTML_DOC = `<!DOCTYPE html>
-<html lang="en"><head><title>Pasted By Admin</title></head>
-<body><main><h1>Offline copy</h1></main></body></html>`
-
-
-
 // Mock Google Gemini
 const { mockGenerateContent } = vi.hoisted(() => {
   return { mockGenerateContent: vi.fn() }
@@ -147,14 +86,6 @@ vi.mock('@google/generative-ai', () => {
 import { db } from '@/lib/db'
 import { submitProject } from '@/lib/services/submission.service'
 import { CrawlerService } from '@/lib/services/crawler.service'
-// Not mocked on purpose: `parseHtmlStructure` is a pure function, so calling it
-// here yields exactly the metrics the crawler derives from the same markup
-// (Requirement 3.4). That is what lets the assertions compare against real
-// numbers instead of restating a hand-written object.
-import {
-  formatStructureForPrompt,
-  parseHtmlStructure,
-} from '@/lib/services/html-structure.service'
 import { ScorerService } from '@/lib/services/scorer.service'
 
 // Access mock internals
@@ -192,39 +123,11 @@ function findProjectUpdateData(
   return null
 }
 
-/** The `create`/`update` payloads handed to `crawlMetadata.upsert`. */
-function readCrawlMetadataUpsertPayloads(): {
-  create: Record<string, unknown>
-  update: Record<string, unknown>
-} {
-  const arg = mockCrawlMetadataUpsert.mock.calls[0][0] as {
-    create: Record<string, unknown>
-    update: Record<string, unknown>
-  }
-  return { create: arg.create, update: arg.update }
-}
-
-/**
- * Let the fire-and-forget `triggerScoring` call inside `triggerCrawl` settle.
- * The crawl deliberately does not await it, so the assertions have to.
- */
-async function flushAsyncScoring(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 50))
-}
-
 // ---------------------------------------------------------------------------
 // Test Data Factories
 // ---------------------------------------------------------------------------
 
-/**
- * A Project row.
- *
- * `projectType` is deliberately absent from the defaults rather than set to
- * `'PARTYROCK'`: a row written before this feature existed carries no opinion
- * of its own, and both services must read that as PartyRock (Requirement 8.1).
- * Leaving the key out is what keeps the PartyRock cases below exercising that
- * exact path. HTML cases pass `projectType: 'HTML'` through `overrides`.
- */
+/** A Project row. */
 function createFakeProject(overrides: Record<string, unknown> = {}) {
   return {
     id: 'project-1',
@@ -232,8 +135,6 @@ function createFakeProject(overrides: Record<string, unknown> = {}) {
     url: 'https://partyrock.aws/app/test-app',
     participantName: 'Test User',
     teamName: null,
-    // Empty by default — the HTML crawl may fill it, and it must not overwrite
-    // a value that is already there (Requirement 3.6).
     sourceCode: null as string | null,
     crawlStatus: 'PENDING' as const,
     crawlError: null,
@@ -248,12 +149,6 @@ function createFakeProject(overrides: Record<string, unknown> = {}) {
 /**
  * A Project row with its category parameters and CrawlMetadata, shaped the way
  * `ScorerService.triggerScoring` reads it.
- *
- * `metadataOverrides` merges into the CrawlMetadata row instead of replacing
- * it, so an HTML case can supply `structure`/`rawHtml` without restating the
- * PartyRock-shaped defaults. A case that needs no metadata row at all passes
- * `metadata: null` through `overrides`, which wins because `overrides` is
- * spread last.
  */
 function createFakeProjectWithCategory(
   overrides: Record<string, unknown> = {},
@@ -324,9 +219,6 @@ function createFakeProjectWithCategory(
       prompts: ['Generate a story about {{topic}}'],
       widgetCount: 2,
       rawHtml: null,
-      // Only the HTML crawl writes this column; a PartyRock row leaves it null,
-      // which is what `triggerScoring` reads as "no structure".
-      structure: null as unknown,
       crawledAt: new Date('2024-01-01'),
       ...metadataOverrides,
     },
@@ -593,17 +485,11 @@ describe('Pipeline Integration: Scoring Partial Failure', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Test 4: PARTYROCK prompt regression
-//
-// The prompt template is now chosen per project type, so the PartyRock path
-// needs a guard of its own: a project that carries no `projectType` at all —
-// which is every row written before this feature — must still be judged by the
-// PartyRock template, with no HTML section anywhere in sight.
-// Requirements: 4.4, 8.2 (html-project-scoring)
+// Test 4: PartyRock prompt regression
 // ---------------------------------------------------------------------------
 
-describe('Pipeline Integration: PARTYROCK Prompt Regression', () => {
-  it('still sends the PartyRock prompt for a project with no projectType', async () => {
+describe('Pipeline Integration: PartyRock Prompt Regression', () => {
+  it('sends the PartyRock prompt with widget/prompt evidence', async () => {
     const projectWithCategory = createFakeProjectWithCategory()
     mockProjectFindUniqueOrThrow.mockResolvedValueOnce(projectWithCategory as never)
     mockCrawlMetadataFindMany.mockResolvedValueOnce([])
@@ -623,282 +509,14 @@ describe('Pipeline Integration: PARTYROCK Prompt Regression', () => {
       expect(prompt).toContain(
         'You are an AI judge evaluating applications built on AWS PartyRock',
       )
-      // Widget evidence is PartyRock-only and is still carried through.
       expect(prompt).toContain('Widget count: 2')
       expect(prompt).toContain('text-input (Topic)')
-      expect(prompt).not.toContain('## HTML Structure')
     }
 
-    // ...and the rest of the pipeline behaves exactly as before.
     expect(mockAIScoreUpsert).toHaveBeenCalledTimes(3)
     const finalUpdate = findProjectUpdateData('scoreStatus', 'SUCCESS')
     expect(finalUpdate).not.toBeNull()
     // (85×30 + 78×40 + 90×30) / 100
     expect(finalUpdate?.finalScore as number).toBeCloseTo(83.7, 1)
-  })
-})
-
-// ---------------------------------------------------------------------------
-// Test 5: HTML Happy Path
-//
-// The whole HTML route, in the order `POST /api/submissions` walks it:
-// submitProject → CrawlerService.triggerCrawl → (fire-and-forget)
-// ScorerService.triggerScoring. Note the entry point differs from the
-// PartyRock route, where scoring is called directly: for an HTML project the
-// live URL is the evidence, so the crawl runs first and starts scoring itself.
-// Requirements: 3.1, 3.2, 3.3, 3.6, 4.1, 4.2 (html-project-scoring)
-// ---------------------------------------------------------------------------
-
-describe('Pipeline Integration: HTML Happy Path', () => {
-  it('submit → crawl stores rawHtml and structure, fills sourceCode, then scores with the HTML prompt', async () => {
-    // --- Phase 1: Submit an HTML project ---
-    mockProjectFindFirst.mockResolvedValueOnce(null) // no duplicate
-    mockProjectCreate.mockResolvedValueOnce(
-      createFakeProject({ projectType: 'HTML', url: HTML_PROJECT_URL }) as never,
-    )
-
-    const result = await submitProject({
-      url: HTML_PROJECT_URL,
-      participantName: 'Rani Puspita',
-      categoryId: 'clxxxxxxxxxxxxxxxxxx001',
-      projectType: 'HTML',
-    })
-
-    expect(result.projectType).toBe('HTML')
-    expect(result.crawlStatus).toBe('PENDING')
-    expect(result.scoreStatus).toBe('PENDING')
-    // A non-PartyRock hostname is accepted because the type says HTML.
-    expect(mockProjectCreate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          url: HTML_PROJECT_URL,
-          projectType: 'HTML',
-          crawlStatus: 'PENDING',
-          scoreStatus: 'PENDING',
-        }),
-      }),
-    )
-
-    // --- Phase 2: Crawl ---
-    mockProjectFindUniqueOrThrow.mockResolvedValueOnce(
-      createFakeProject({
-        projectType: 'HTML',
-        url: HTML_PROJECT_URL,
-        sourceCode: null, // empty, so the fetched markup may fill it
-        category: { id: 'category-1' },
-      }) as never,
-    )
-    mockProjectUpdate.mockResolvedValue({} as never)
-    mockCrawlMetadataUpsert.mockResolvedValueOnce({} as never)
-    mockFetchHtmlOnce(HTML_PROJECT_DOC)
-
-    // --- Phase 3: the scoring run the successful crawl triggers ---
-    // The row reflects what phase 2 just persisted; the assertions below check
-    // that the crawl really did write these values.
-    const expectedStructure = parseHtmlStructure(HTML_PROJECT_DOC)
-    mockProjectFindUniqueOrThrow.mockResolvedValueOnce(
-      createFakeProjectWithCategory(
-        {
-          projectType: 'HTML',
-          url: HTML_PROJECT_URL,
-          sourceCode: HTML_PROJECT_DOC,
-        },
-        {
-          title: 'Portofolio Rani',
-          description: 'Portofolio desainer produk',
-          widgets: [],
-          prompts: [],
-          widgetCount: 0,
-          rawHtml: HTML_PROJECT_DOC,
-          structure: expectedStructure,
-        },
-      ) as never,
-    )
-    mockCrawlMetadataFindMany.mockResolvedValueOnce([])
-    mockAIScoreUpsert.mockResolvedValue({} as never)
-
-    mockGenerateContent
-      .mockResolvedValueOnce(createGeminiResponse(88, 'Strong semantic structure'))
-      .mockResolvedValueOnce(createGeminiResponse(74, 'Accessibility mostly covered'))
-      .mockResolvedValueOnce(createGeminiResponse(91, 'Clear presentation'))
-
-    await CrawlerService.triggerCrawl('project-1')
-    await flushAsyncScoring()
-
-    // --- Assert: crawl status transitions ---
-    expect(findProjectUpdateData('crawlStatus', 'PROCESSING')).not.toBeNull()
-    const successUpdate = findProjectUpdateData('crawlStatus', 'SUCCESS')
-    expect(successUpdate).not.toBeNull()
-
-    // --- Assert: rawHtml and structure reached CrawlMetadata (Requirement 3.2) ---
-    const { create, update } = readCrawlMetadataUpsertPayloads()
-    for (const payload of [create, update]) {
-      expect(payload.rawHtml).toBe(HTML_PROJECT_DOC)
-      expect(payload.title).toBe('Portofolio Rani')
-      expect(payload.description).toBe('Portofolio desainer produk')
-      // Deep-equal against the real extractor output, then spot-check a few
-      // metrics so a silently empty structure cannot pass.
-      expect(payload.structure).toEqual(expectedStructure)
-      const structure = payload.structure as typeof expectedStructure
-      expect(structure.hasSingleH1).toBe(true)
-      expect(structure.langAttribute).toBe('id')
-      expect(structure.landmarks).toContain('main')
-      expect(structure.imagesWithAlt).toBe(1)
-      expect(structure.formFieldCount).toBe(1)
-      expect(structure.labelledFormFields).toBe(1)
-    }
-
-    // --- Assert: sourceCode was filled because it started empty (Req 3.6) ---
-    expect(successUpdate?.sourceCode).toBe(HTML_PROJECT_DOC)
-
-    // --- Assert: the HTML prompt was used (Requirements 4.1, 4.2) ---
-    const prompts = promptsSentToGemini()
-    expect(prompts).toHaveLength(3)
-    for (const prompt of prompts) {
-      expect(prompt).toContain('## HTML Structure')
-      expect(prompt).toContain('You are an AI judge evaluating web projects')
-      // The structure block holds this page's own metrics, not a placeholder.
-      expect(prompt).toContain('Lang attribute: "id"')
-      expect(prompt).toContain('Title: "Portofolio Rani"')
-      // ...and the markup is a separate, secondary block (Requirement 4.2).
-      expect(prompt).toContain('## HTML Source (excerpt)')
-      expect(prompt).toContain('Portofolio Rani</title>')
-      expect(prompt).not.toContain('AWS PartyRock')
-    }
-
-    // --- Assert: scoring completed identically to the PartyRock path (Req 4.5) ---
-    expect(mockAIScoreUpsert).toHaveBeenCalledTimes(3)
-    const finalUpdate = findProjectUpdateData('scoreStatus', 'SUCCESS')
-    expect(finalUpdate).not.toBeNull()
-    // (88×30 + 74×40 + 91×30) / 100
-    expect(finalUpdate?.finalScore as number).toBeCloseTo(83.3, 1)
-  })
-})
-
-// ---------------------------------------------------------------------------
-// Test 6: HTML fetch failure with Source Code already pasted
-//
-// Requirement 3.5: the crawl is recorded as FAILED with its error — the status
-// machine is untouched — but the pasted markup is evidence enough, so scoring
-// runs anyway. This is the case that makes an unreachable URL scoreable.
-// ---------------------------------------------------------------------------
-
-describe('Pipeline Integration: HTML Fetch Failure With Pasted Source Code', () => {
-  it('records crawlStatus = FAILED yet still scores from the pasted Source Code', async () => {
-    mockProjectFindUniqueOrThrow.mockResolvedValueOnce(
-      createFakeProject({
-        projectType: 'HTML',
-        url: HTML_PROJECT_URL,
-        sourceCode: PASTED_HTML_DOC,
-        category: { id: 'category-1' },
-      }) as never,
-    )
-    mockProjectUpdate.mockResolvedValue({} as never)
-    mockFetch.mockRejectedValueOnce(
-      new Error('getaddrinfo ENOTFOUND rani.example.com'),
-    )
-
-    // The scoring run the failed crawl still starts. No `rawHtml` and no
-    // `structure` — nothing was fetched, so the pasted markup is all there is.
-    mockProjectFindUniqueOrThrow.mockResolvedValueOnce(
-      createFakeProjectWithCategory(
-        {
-          projectType: 'HTML',
-          url: HTML_PROJECT_URL,
-          sourceCode: PASTED_HTML_DOC,
-          crawlStatus: 'FAILED',
-          crawlError: 'getaddrinfo ENOTFOUND rani.example.com',
-        },
-        {
-          title: null,
-          description: null,
-          widgets: [],
-          prompts: [],
-          widgetCount: 0,
-          rawHtml: null,
-          structure: null,
-        },
-      ) as never,
-    )
-    mockCrawlMetadataFindMany.mockResolvedValueOnce([])
-    mockAIScoreUpsert.mockResolvedValue({} as never)
-
-    mockGenerateContent
-      .mockResolvedValueOnce(createGeminiResponse(60, 'Sparse markup'))
-      .mockResolvedValueOnce(createGeminiResponse(55, 'Little accessibility work'))
-      .mockResolvedValueOnce(createGeminiResponse(70, 'Purpose is legible'))
-
-    await CrawlerService.triggerCrawl('project-1')
-    await flushAsyncScoring()
-
-    // --- Assert: the crawl really did fail and says so ---
-    const failedCrawl = findProjectUpdateData('crawlStatus', 'FAILED')
-    expect(failedCrawl).not.toBeNull()
-    expect(failedCrawl?.crawlError).toContain('ENOTFOUND')
-    expect(findProjectUpdateData('crawlStatus', 'SUCCESS')).toBeNull()
-    // Nothing was fetched, so no metadata was written and the pasted value was
-    // never touched.
-    expect(mockCrawlMetadataUpsert).not.toHaveBeenCalled()
-    expect(failedCrawl).not.toHaveProperty('sourceCode')
-
-    // --- Assert: scoring proceeded from the pasted markup (Requirement 3.5) ---
-    expect(mockAIScoreUpsert).toHaveBeenCalledTimes(3)
-    const finalUpdate = findProjectUpdateData('scoreStatus', 'SUCCESS')
-    expect(finalUpdate).not.toBeNull()
-    // (60×30 + 55×40 + 70×30) / 100
-    expect(finalUpdate?.finalScore as number).toBeCloseTo(61, 1)
-
-    const prompts = promptsSentToGemini()
-    expect(prompts).toHaveLength(3)
-    // The fetch produced no `structure`, so the metrics come from the pasted
-    // markup instead (Requirement 3.6) — a failed crawl costs the project its
-    // fetched evidence, not its primary evidence block.
-    const structureFromPastedMarkup = formatStructureForPrompt(
-      parseHtmlStructure(PASTED_HTML_DOC),
-    )
-    for (const prompt of prompts) {
-      expect(prompt).toContain('## HTML Structure')
-      expect(prompt).toContain(structureFromPastedMarkup)
-      expect(prompt).not.toContain('HTML structure unavailable')
-      // The pasted markup is the evidence that carried the run.
-      expect(prompt).toContain('Pasted By Admin')
-    }
-  })
-})
-
-// ---------------------------------------------------------------------------
-// Test 7: HTML project with no evidence at all
-//
-// Requirement 4.6: no Source Code, no computed structure, no fetched markup →
-// scoreStatus = FAILED, and Gemini is never called. Sending an empty prompt
-// would only buy a confidently invented score.
-// ---------------------------------------------------------------------------
-
-describe('Pipeline Integration: HTML Project With No Evidence', () => {
-  it('sets scoreStatus = FAILED without calling Gemini', async () => {
-    mockProjectFindUniqueOrThrow.mockResolvedValueOnce(
-      createFakeProjectWithCategory({
-        projectType: 'HTML',
-        url: HTML_PROJECT_URL,
-        sourceCode: null,
-        // No crawl has ever landed, so there is no CrawlMetadata row either.
-        metadata: null,
-      }) as never,
-    )
-    mockProjectUpdate.mockResolvedValue({} as never)
-
-    await ScorerService.triggerScoring('project-1')
-
-    expect(mockGenerateContent).not.toHaveBeenCalled()
-    expect(mockAIScoreUpsert).not.toHaveBeenCalled()
-    // The guard short-circuits before the sibling-context query, too.
-    expect(mockCrawlMetadataFindMany).not.toHaveBeenCalled()
-
-    const failedUpdate = findProjectUpdateData('scoreStatus', 'FAILED')
-    expect(failedUpdate).not.toBeNull()
-    // `finalScore` is deliberately left as it stands — it can carry a
-    // jury-derived value, and nothing was scored here that would justify
-    // clearing it.
-    expect(failedUpdate).not.toHaveProperty('finalScore')
   })
 })

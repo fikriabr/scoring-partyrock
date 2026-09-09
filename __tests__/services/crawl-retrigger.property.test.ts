@@ -18,7 +18,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import * as fc from 'fast-check'
-import type { PartyRockMetadata, WidgetInfo } from '@/types'
+import type { ProjectMetadata, WidgetInfo } from '@/types'
 
 // ---------------------------------------------------------------------------
 // Mock modules BEFORE importing the service under test.
@@ -93,8 +93,8 @@ const promptsArb = fc.array(
   { minLength: 0, maxLength: 5 },
 )
 
-/** Valid PartyRockMetadata with consistent widgetCount */
-const metadataArb: fc.Arbitrary<PartyRockMetadata> = fc
+/** Valid ProjectMetadata with consistent widgetCount */
+const metadataArb: fc.Arbitrary<ProjectMetadata> = fc
   .record({
     title: titleArb,
     description: descriptionArb,
@@ -323,7 +323,7 @@ describe('Property 9: Crawl Re-trigger — deterministic edge cases', () => {
       'https://partyrock.aws/app/my-app',
       'cat_001',
     )
-    const newMetadata: PartyRockMetadata = {
+    const newMetadata: ProjectMetadata = {
       title: 'Updated App',
       description: 'Fresh description',
       widgets: [{ type: 'ai', label: 'AI Widget' }],
@@ -363,7 +363,7 @@ describe('Property 9: Crawl Re-trigger — deterministic edge cases', () => {
       'https://partyrock.aws/app/success-app',
       'cat_002',
     )
-    const metadata: PartyRockMetadata = {
+    const metadata: ProjectMetadata = {
       title: 'Success App',
       description: null,
       widgets: [],
@@ -424,7 +424,7 @@ describe('Property 9: Crawl Re-trigger — deterministic edge cases', () => {
       'https://partyrock.aws/app/order-app',
       'cat_004',
     )
-    const metadata: PartyRockMetadata = {
+    const metadata: ProjectMetadata = {
       title: 'Order Test',
       description: 'Testing call order',
       widgets: [{ type: 'text', label: 'Input' }],

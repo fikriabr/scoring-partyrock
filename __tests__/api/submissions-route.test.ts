@@ -1,19 +1,10 @@
 /**
- * Unit Tests: POST /api/submissions — pipeline entry point per project type
+ * Unit Tests: POST /api/submissions — pipeline entry point
  *
- * Requirements: 3.1
- *
- * The route creates the Project and then kicks off exactly one asynchronous
- * entry point, chosen by `Project.projectType`:
- *
- *   HTML      → CrawlerService.triggerCrawl, which fetches the live URL,
- *               stores `rawHtml`/`structure`, and calls triggerScoring itself.
- *   PARTYROCK → ScorerService.triggerScoring directly, exactly as before.
- *
- * The pairing is exclusive in both directions, and that is the point of these
- * tests: because `triggerCrawl` already ends in a `triggerScoring` call on
- * every path it can finish on, calling both from here would score the project
- * twice.
+ * The route creates the Project and then kicks off scoring directly via
+ * `ScorerService.triggerScoring`. Widgets and prompts come from the Capture
+ * Pipeline rather than a crawl, so scoring starts immediately on whatever
+ * evidence was pasted at submission time.
  *
  * Everything below the route is mocked — the route's only job is dispatch, so
  * the assertions are about which entry point was called, not about what it
@@ -44,10 +35,6 @@ vi.mock('@/lib/services/submission.service', () => {
   return { submitProject: vi.fn(), DuplicateUrlError }
 })
 
-vi.mock('@/lib/services/crawler.service', () => ({
-  CrawlerService: { triggerCrawl: vi.fn().mockResolvedValue(undefined) },
-}))
-
 vi.mock('@/lib/services/scorer.service', () => ({
   ScorerService: { triggerScoring: vi.fn().mockResolvedValue(undefined) },
 }))
@@ -55,12 +42,10 @@ vi.mock('@/lib/services/scorer.service', () => ({
 import { POST } from '@/app/api/submissions/route'
 import { auth } from '@/lib/auth/config'
 import { submitProject, DuplicateUrlError } from '@/lib/services/submission.service'
-import { CrawlerService } from '@/lib/services/crawler.service'
 import { ScorerService } from '@/lib/services/scorer.service'
 
 const mockAuth = vi.mocked(auth)
 const mockSubmitProject = vi.mocked(submitProject)
-const mockTriggerCrawl = vi.mocked(CrawlerService.triggerCrawl)
 const mockTriggerScoring = vi.mocked(ScorerService.triggerScoring)
 
 // ---------------------------------------------------------------------------
@@ -91,10 +76,9 @@ function buildProjectRecord(overrides: Record<string, unknown> = {}) {
   return {
     id: 'project-1',
     categoryId: 'category-1',
-    url: 'https://example.com/portfolio',
+    url: 'https://partyrock.aws/app/abc123',
     participantName: 'Test User',
     teamName: null,
-    projectType: 'HTML' as const,
     sourceCode: null as string | null,
     crawlStatus: 'PENDING' as const,
     crawlError: null,
@@ -106,15 +90,7 @@ function buildProjectRecord(overrides: Record<string, unknown> = {}) {
   }
 }
 
-const HTML_BODY = {
-  projectType: 'HTML',
-  url: 'https://example.com/portfolio',
-  participantName: 'Test User',
-  categoryId: 'clabcdef0001',
-}
-
 const PARTYROCK_BODY = {
-  projectType: 'PARTYROCK',
   url: 'https://partyrock.aws/app/abc123',
   participantName: 'Test User',
   categoryId: 'clabcdef0001',
@@ -122,106 +98,38 @@ const PARTYROCK_BODY = {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mockTriggerCrawl.mockResolvedValue(undefined)
   mockTriggerScoring.mockResolvedValue(undefined)
   signInAsAdmin()
 })
 
 // ---------------------------------------------------------------------------
-// HTML → crawl path
+// Direct scoring path
 // ---------------------------------------------------------------------------
 
-describe('POST /api/submissions — HTML projects take the crawl path', () => {
-  it('triggers the crawl and does not call triggerScoring from the route', async () => {
-    mockSubmitProject.mockResolvedValueOnce(
-      buildProjectRecord({ projectType: 'HTML' }) as never,
-    )
+describe('POST /api/submissions — projects score directly', () => {
+  it('triggers scoring for the created project', async () => {
+    mockSubmitProject.mockResolvedValueOnce(buildProjectRecord() as never)
 
-    const response = await POST(buildRequest(HTML_BODY))
+    const response = await POST(buildRequest(PARTYROCK_BODY))
 
     expect(response.status).toBe(201)
-    expect(mockTriggerCrawl).toHaveBeenCalledExactlyOnceWith('project-1')
-    // triggerCrawl already ends in a triggerScoring call; a second one here
-    // would score the project twice.
-    expect(mockTriggerScoring).not.toHaveBeenCalled()
+    expect(mockTriggerScoring).toHaveBeenCalledExactlyOnceWith('project-1')
   })
 
-  it('still crawls when Source Code was pasted at submission time', async () => {
-    // The live URL is worth fetching even so — it is the only source of
-    // `rawHtml` and `structure` — and the crawler refuses to overwrite a
-    // pasted `sourceCode` (Requirement 3.6).
-    mockSubmitProject.mockResolvedValueOnce(
-      buildProjectRecord({
-        projectType: 'HTML',
-        sourceCode: '<html><body><h1>Pasted</h1></body></html>',
-      }) as never,
-    )
-
-    await POST(buildRequest({ ...HTML_BODY, sourceCode: '<html></html>' }))
-
-    expect(mockTriggerCrawl).toHaveBeenCalledExactlyOnceWith('project-1')
-    expect(mockTriggerScoring).not.toHaveBeenCalled()
-  })
-
-  it('returns 201 with the created project even when the crawl rejects', async () => {
-    // Fire-and-forget: a rejected crawl is logged, never surfaced to the
+  it('returns 201 with the created project even when scoring rejects', async () => {
+    // Fire-and-forget: a rejected scoring run is logged, never surfaced to the
     // caller, and never left as an unhandled rejection.
-    mockSubmitProject.mockResolvedValueOnce(
-      buildProjectRecord({ projectType: 'HTML' }) as never,
-    )
-    mockTriggerCrawl.mockRejectedValueOnce(new Error('crawl blew up'))
+    mockSubmitProject.mockResolvedValueOnce(buildProjectRecord() as never)
+    mockTriggerScoring.mockRejectedValueOnce(new Error('scoring blew up'))
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => { })
 
-    const response = await POST(buildRequest(HTML_BODY))
+    const response = await POST(buildRequest(PARTYROCK_BODY))
     const json = await response.json()
 
     expect(response.status).toBe(201)
     expect(json.id).toBe('project-1')
 
     consoleError.mockRestore()
-  })
-})
-
-// ---------------------------------------------------------------------------
-// PARTYROCK → direct scoring path (unchanged behaviour)
-// ---------------------------------------------------------------------------
-
-describe('POST /api/submissions — PARTYROCK projects score directly', () => {
-  it('triggers scoring and never triggers a crawl', async () => {
-    mockSubmitProject.mockResolvedValueOnce(
-      buildProjectRecord({
-        projectType: 'PARTYROCK',
-        url: 'https://partyrock.aws/app/abc123',
-      }) as never,
-    )
-
-    const response = await POST(buildRequest(PARTYROCK_BODY))
-
-    expect(response.status).toBe(201)
-    expect(mockTriggerScoring).toHaveBeenCalledExactlyOnceWith('project-1')
-    expect(mockTriggerCrawl).not.toHaveBeenCalled()
-  })
-
-  it('scores directly for a project whose type came from the schema default', async () => {
-    // `SubmissionSchema` defaults `projectType` to PARTYROCK, so a payload
-    // without the field must behave exactly as it did before this feature.
-    mockSubmitProject.mockResolvedValueOnce(
-      buildProjectRecord({
-        projectType: 'PARTYROCK',
-        url: 'https://partyrock.aws/app/abc123',
-      }) as never,
-    )
-
-    await POST(
-      buildRequest({
-        url: 'https://partyrock.aws/app/abc123',
-        participantName: 'Test User',
-        categoryId: 'clabcdef0001',
-      }),
-    )
-
-    expect(mockTriggerScoring).toHaveBeenCalledExactlyOnceWith('project-1')
-    expect(mockTriggerCrawl).not.toHaveBeenCalled()
   })
 })
 
@@ -233,25 +141,23 @@ describe('POST /api/submissions — no pipeline entry point without a project', 
   it('returns 401 and triggers nothing for an unauthenticated caller', async () => {
     mockAuth.mockResolvedValueOnce(null as never)
 
-    const response = await POST(buildRequest(HTML_BODY))
+    const response = await POST(buildRequest(PARTYROCK_BODY))
 
     expect(response.status).toBe(401)
     expect(mockSubmitProject).not.toHaveBeenCalled()
-    expect(mockTriggerCrawl).not.toHaveBeenCalled()
     expect(mockTriggerScoring).not.toHaveBeenCalled()
   })
 
   it('returns 409 and triggers nothing on a duplicate URL', async () => {
     mockSubmitProject.mockRejectedValueOnce(
-      new DuplicateUrlError('https://example.com/portfolio', 'clabcdef0001'),
+      new DuplicateUrlError('https://partyrock.aws/app/abc123', 'clabcdef0001'),
     )
 
-    const response = await POST(buildRequest(HTML_BODY))
+    const response = await POST(buildRequest(PARTYROCK_BODY))
     const json = await response.json()
 
     expect(response.status).toBe(409)
     expect(json.code).toBe('DUPLICATE_URL')
-    expect(mockTriggerCrawl).not.toHaveBeenCalled()
     expect(mockTriggerScoring).not.toHaveBeenCalled()
   })
 })
