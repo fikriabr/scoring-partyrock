@@ -1,16 +1,11 @@
 /**
- * Unit Tests: default parameter sets (PARTYROCK + HTML)
+ * Unit Tests: default parameter set (PARTYROCK)
  *
- * Requirements: 6.1, 6.2, 6.3, 6.4
+ *   - The default set totals exactly 100% weight.
+ *   - The caller may load it explicitly or via the default argument.
  *
- *   6.1 A separate default parameter set for web projects exists alongside the
- *       existing PartyRock template.
- *   6.2 Every default set totals exactly 100% weight.
- *   6.3 The caller may choose which set is loaded.
- *   6.4 The existing PartyRock set keeps its names, descriptions and weights.
- *
- * The PartyRock expectations below are pinned verbatim on purpose: they are a
- * regression guard for 6.4, so any edit to that template — including a reworded
+ * The expectations below are pinned verbatim on purpose: they are a
+ * regression guard, so any edit to the template — including a reworded
  * description — has to fail here first and be a conscious decision.
  */
 
@@ -68,10 +63,6 @@ beforeEach(() => {
   mockAuth.mockResolvedValue({ user: { role: 'ADMIN' } })
 })
 
-// ---------------------------------------------------------------------------
-// Requirement 6.2 — every set totals 100%
-// ---------------------------------------------------------------------------
-
 describe('default parameter sets — total weight', () => {
   it.each(DEFAULT_PARAMETER_SET_NAMES)(
     'set %s totals exactly 100 percent weight',
@@ -84,8 +75,8 @@ describe('default parameter sets — total weight', () => {
     },
   )
 
-  it('exposes exactly the PARTYROCK and HTML sets', () => {
-    expect([...DEFAULT_PARAMETER_SET_NAMES].sort()).toEqual(['HTML', 'PARTYROCK'])
+  it('exposes exactly the PARTYROCK set', () => {
+    expect([...DEFAULT_PARAMETER_SET_NAMES]).toEqual(['PARTYROCK'])
   })
 
   it('getDefaultParameterSet returns a set whose weights total 100%', () => {
@@ -97,11 +88,7 @@ describe('default parameter sets — total weight', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// Requirement 6.4 — the PartyRock set is untouched
-// ---------------------------------------------------------------------------
-
-describe('PARTYROCK set — regression guard (requirement 6.4)', () => {
+describe('PARTYROCK set — regression guard', () => {
   const expected = [
     {
       name: 'Creativity & Originality',
@@ -155,10 +142,6 @@ describe('PARTYROCK set — regression guard (requirement 6.4)', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// Requirement 6.4 — the default argument still seeds PartyRock
-// ---------------------------------------------------------------------------
-
 describe('loadDefaultParameters — default argument', () => {
   it('seeds the PARTYROCK set when no set is given', async () => {
     await loadDefaultParameters('cat_default')
@@ -190,51 +173,7 @@ describe('loadDefaultParameters — default argument', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// Requirement 6.1 — the HTML set
-// ---------------------------------------------------------------------------
-
-describe('loadDefaultParameters — HTML set (requirement 6.1)', () => {
-  it('seeds 5 parameters with the specified names and weights', async () => {
-    await loadDefaultParameters('cat_html', 'HTML')
-
-    const data = seededParameters()
-    expect(data).toHaveLength(5)
-    expect(
-      data.map((p) => ({
-        name: p.name,
-        weight: p.weight,
-        orderIndex: p.orderIndex,
-      })),
-    ).toEqual([
-      { name: 'Semantic HTML & Structure', weight: 25, orderIndex: 0 },
-      { name: 'Accessibility', weight: 25, orderIndex: 1 },
-      { name: 'Code Quality & Maintainability', weight: 20, orderIndex: 2 },
-      { name: 'User Experience & Presentation', weight: 15, orderIndex: 3 },
-      { name: 'Impact & Scalability', weight: 15, orderIndex: 4 },
-    ])
-    expect(data.reduce((sum, p) => sum + (p.weight as number), 0)).toBe(100)
-  })
-
-  it('gives every HTML parameter a non-empty description, AUTO mode and 0-100 range', async () => {
-    await loadDefaultParameters('cat_html_meta', 'HTML')
-
-    for (const p of seededParameters()) {
-      expect(typeof p.description).toBe('string')
-      expect((p.description as string).trim().length).toBeGreaterThan(0)
-      expect(p.scoringMode).toBe('AUTO')
-      expect(p.minScore).toBe(0)
-      expect(p.maxScore).toBe(100)
-      expect(p.categoryId).toBe('cat_html_meta')
-    }
-  })
-})
-
-// ---------------------------------------------------------------------------
-// Requirement 6.3 — unknown set names are rejected
-// ---------------------------------------------------------------------------
-
-describe('unknown set names are rejected (requirement 6.3)', () => {
+describe('unknown set names are rejected', () => {
   const unknownValues = ['html', 'PARTYROCK ', 'REACT', '', 'toString', null, 42]
 
   it('isDefaultParameterSet accepts only the known names', () => {
@@ -264,16 +203,11 @@ describe('unknown set names are rejected (requirement 6.3)', () => {
     expect(result.success).toBe(false)
     expect(result.message).toMatch(/Unknown default parameter set/)
     expect(result.message).toContain('PARTYROCK')
-    expect(result.message).toContain('HTML')
     expect(mockCreateMany).not.toHaveBeenCalled()
   })
 })
 
-// ---------------------------------------------------------------------------
-// Requirement 6.3 — the action forwards the chosen set
-// ---------------------------------------------------------------------------
-
-describe('loadDefaultParametersAction — set forwarding (requirement 6.3)', () => {
+describe('loadDefaultParametersAction', () => {
   it('seeds PARTYROCK when the set argument is omitted', async () => {
     const result = await loadDefaultParametersAction('cat_action_default')
 
@@ -283,23 +217,10 @@ describe('loadDefaultParametersAction — set forwarding (requirement 6.3)', () 
     )
   })
 
-  it('seeds HTML when HTML is requested', async () => {
-    const result = await loadDefaultParametersAction('cat_action_html', 'HTML')
-
-    expect(result.success).toBe(true)
-    expect(seededParameters().map((p) => p.name)).toEqual([
-      'Semantic HTML & Structure',
-      'Accessibility',
-      'Code Quality & Maintainability',
-      'User Experience & Presentation',
-      'Impact & Scalability',
-    ])
-  })
-
   it('rejects a non-admin caller before any set validation', async () => {
     mockAuth.mockResolvedValue({ user: { role: 'JURY' } })
 
-    const result = await loadDefaultParametersAction('cat_forbidden', 'HTML')
+    const result = await loadDefaultParametersAction('cat_forbidden', 'PARTYROCK')
 
     expect(result.success).toBe(false)
     expect(result.message).toMatch(/Forbidden/)

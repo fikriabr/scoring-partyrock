@@ -34,11 +34,6 @@ enum ScoringMode {
   MANUAL
 }
 
-enum ProjectType {
-  PARTYROCK
-  HTML
-}
-
 model User {
   id            String   @id @default(cuid())
   name          String
@@ -118,7 +113,6 @@ model Project {
   url             String
   participantName String
   teamName        String?
-  projectType     ProjectType @default(PARTYROCK)
   sourceCode      String?
   crawlStatus     CrawlStatus @default(PENDING)
   crawlError      String?
@@ -145,7 +139,6 @@ model CrawlMetadata {
   prompts     Json
   widgetCount Int      @default(0)
   rawHtml     String?
-  structure   Json?
   crawledAt   DateTime @default(now())
 
   project Project @relation(fields: [projectId], references: [id])

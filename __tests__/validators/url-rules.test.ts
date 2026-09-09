@@ -27,41 +27,25 @@ describe('isPartyRockHost', () => {
   })
 })
 
-describe('validateProjectUrl — PARTYROCK', () => {
+describe('validateProjectUrl', () => {
   it.each([
     'https://partyrock.aws',
     'https://partyrock.aws/app/123',
     'http://partyrock.aws/app',
     'https://app.partyrock.aws/demo?x=1',
   ])('accepts %s', (url) => {
-    expect(validateProjectUrl(url, 'PARTYROCK')).toEqual({ ok: true })
+    expect(validateProjectUrl(url)).toEqual({ ok: true })
   })
 
   it('rejects a non-PartyRock host with the PartyRock rule message', () => {
-    expect(validateProjectUrl('https://google.com', 'PARTYROCK')).toEqual({
+    expect(validateProjectUrl('https://google.com')).toEqual({
       ok: false,
       message: 'URL must be a valid PartyRock URL (domain: partyrock.aws)',
     })
   })
 
   it('rejects a partyrock.aws URL on a non-web scheme', () => {
-    expect(validateProjectUrl('ftp://partyrock.aws/', 'PARTYROCK')).toEqual({
-      ok: false,
-      message: 'URL must use http or https',
-    })
-  })
-})
-
-describe('validateProjectUrl — HTML', () => {
-  it.each(['https://google.com', 'http://example.dev/index.html', 'https://partyrock.aws/app'])(
-    'accepts any host: %s',
-    (url) => {
-      expect(validateProjectUrl(url, 'HTML')).toEqual({ ok: true })
-    },
-  )
-
-  it('still rejects a non-web scheme', () => {
-    expect(validateProjectUrl('ftp://example.com/file.html', 'HTML')).toEqual({
+    expect(validateProjectUrl('ftp://partyrock.aws/')).toEqual({
       ok: false,
       message: 'URL must use http or https',
     })
@@ -70,11 +54,12 @@ describe('validateProjectUrl — HTML', () => {
 
 describe('validateProjectUrl — unparseable input', () => {
   it.each(['', 'not-a-url', 'partyrock.aws', '//partyrock.aws/app', 'http://'])(
-    'rejects %s for both project types',
+    'rejects %s',
     (url) => {
-      const expected = { ok: false, message: 'URL must be a valid URL' }
-      expect(validateProjectUrl(url, 'PARTYROCK')).toEqual(expected)
-      expect(validateProjectUrl(url, 'HTML')).toEqual(expected)
+      expect(validateProjectUrl(url)).toEqual({
+        ok: false,
+        message: 'URL must be a valid URL',
+      })
     },
   )
 })

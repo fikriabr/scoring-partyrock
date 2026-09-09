@@ -10,7 +10,6 @@ import { db } from '@/lib/db'
 import { RetryButton } from '@/components/SubmissionForm'
 import CaptureImportPanel from '@/components/CaptureImportPanel'
 import SourceCodeEditor from '@/components/SourceCodeEditor'
-import ProjectTypeBadge from '@/components/ProjectTypeBadge'
 
 interface PageProps {
   params: Promise<{ projectId: string }>
@@ -68,10 +67,6 @@ export default async function ProjectDetailPage({ params }: PageProps) {
               <span className="rounded-md bg-gray-50 px-2 py-1">
                 Category: {project.category.name}
               </span>
-              {/* Project type sits next to the status badges — same pill shape,
-                  different palette so it does not read as a status.
-                  Requirements: 1.7 */}
-              <ProjectTypeBadge projectType={project.projectType} />
               <StatusBadge status={project.crawlStatus} />
               <StatusBadge status={project.scoreStatus} />
             </div>
@@ -187,37 +182,28 @@ export default async function ProjectDetailPage({ params }: PageProps) {
         </div>
       </section>
 
-      {/* Evidence section — Source Code first, because it applies to every
-          project type and carries the availability indicator (Requirement
-          5.6). The capture import panel follows, PartyRock-only. */}
+      {/* Evidence section — Source Code first, because it carries the
+          availability indicator. The capture import panel follows. */}
       <section>
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Evidence</h2>
         <div className="space-y-4">
-          {/* Both project types: the editor owns the Source Code availability
-              and size indicator, so the page must not render a second one.
-              Requirements: 5.1, 5.6 */}
           <SourceCodeEditor
             projectId={project.id}
             sourceCode={project.sourceCode}
-            projectType={project.projectType}
           />
 
           {/* Manual capture — the widget/prompt data the HTTP crawler cannot
-              reach (see lib/services/capture.service.ts). Rendered only for
-              PARTYROCK: the capture payload has no meaning for an HTML
-              project, whose evidence is its markup. Requirements: 5.5 */}
-          {project.projectType === 'PARTYROCK' && (
-            <div>
-              <h3 className="mb-3 text-sm font-semibold text-gray-900">
-                Capture Data
-              </h3>
-              <CaptureImportPanel
-                projectId={project.id}
-                projectUrl={project.url}
-                categoryId={project.categoryId}
-              />
-            </div>
-          )}
+              reach (see lib/services/capture.service.ts). */}
+          <div>
+            <h3 className="mb-3 text-sm font-semibold text-gray-900">
+              Capture Data
+            </h3>
+            <CaptureImportPanel
+              projectId={project.id}
+              projectUrl={project.url}
+              categoryId={project.categoryId}
+            />
+          </div>
         </div>
       </section>
 
