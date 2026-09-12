@@ -46,7 +46,7 @@ function isTerminal(status: ProjectStatus): boolean {
 type ContextValue = {
   status: ProjectStatus
   isRetrying: boolean
-  retry: (type: 'crawl' | 'score') => void
+  retryScoring: () => void
 }
 
 const LiveProjectStatusContext = createContext<ContextValue | null>(null)
@@ -99,33 +99,21 @@ export function LiveProjectStatusProvider({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, pollIntervalMs, status.crawlStatus, status.scoreStatus])
 
-  const retry = useCallback(
-    (type: 'crawl' | 'score') => {
-      setIsRetrying(true)
-      const endpoint =
-        type === 'crawl'
-          ? `/api/crawl/${projectId}?action=retrigger`
-          : `/api/score/${projectId}`
-
-      fetch(endpoint, { method: 'POST' })
-        .then(() => {
-          // Optimistically mark the retried pipeline as running so the
-          // badge and poll loop react immediately — the real PROCESSING
-          // write happens moments later, inside the route's after().
-          setStatus((prev) =>
-            type === 'crawl'
-              ? { ...prev, crawlStatus: 'PROCESSING' }
-              : { ...prev, scoreStatus: 'PROCESSING' },
-          )
-          router.refresh()
-        })
-        .finally(() => setIsRetrying(false))
-    },
-    [projectId, router],
-  )
+  const retryScoring = useCallback(() => {
+    setIsRetrying(true)
+    fetch(`/api/score/${projectId}`, { method: 'POST' })
+      .then(() => {
+        // Optimistically mark scoring as running so the badge and poll loop
+        // react immediately — the real PROCESSING write happens moments
+        // later, inside the route's after().
+        setStatus((prev) => ({ ...prev, scoreStatus: 'PROCESSING' }))
+        router.refresh()
+      })
+      .finally(() => setIsRetrying(false))
+  }, [projectId, router])
 
   return (
-    <LiveProjectStatusContext.Provider value={{ status, isRetrying, retry }}>
+    <LiveProjectStatusContext.Provider value={{ status, isRetrying, retryScoring }}>
       {children}
     </LiveProjectStatusContext.Provider>
   )
@@ -209,38 +197,27 @@ export function LiveStatusBadge({ field }: { field: 'crawl' | 'score' }) {
 }
 
 // -----------------------------------------------------------------------
-// LiveRetryButtons — retry-crawl / retry-score buttons wired to the same
-// poll loop so clicking one resumes live polling immediately.
+// LiveRetryButtons — retry-score button wired to the same poll loop so
+// clicking it resumes live polling immediately. There is no retry-crawl
+// button: crawling PartyRock apps only works through the manual capture
+// pipeline (`npm run capture`), not the HTTP crawler, so retriggering it
+// from here would never do anything useful.
 // -----------------------------------------------------------------------
 export function LiveRetryButtons() {
-  const { status, isRetrying, retry } = useLiveProjectStatusContext()
+  const { status, isRetrying, retryScoring } = useLiveProjectStatusContext()
 
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => retry('crawl')}
-        disabled={status.crawlStatus === 'PROCESSING' || isRetrying}
-        className={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors ${
-          status.crawlStatus === 'PROCESSING' || isRetrying
-            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-            : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
-        }`}
-      >
-        {isRetrying ? '...' : 'Retry Crawl'}
-      </button>
-      <button
-        type="button"
-        onClick={() => retry('score')}
-        disabled={status.scoreStatus === 'PROCESSING' || isRetrying}
-        className={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors ${
-          status.scoreStatus === 'PROCESSING' || isRetrying
-            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-            : 'bg-purple-50 text-purple-700 hover:bg-purple-100'
-        }`}
-      >
-        {isRetrying ? '...' : 'Retry Score'}
-      </button>
-    </>
+    <button
+      type="button"
+      onClick={retryScoring}
+      disabled={status.scoreStatus === 'PROCESSING' || isRetrying}
+      className={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors ${
+        status.scoreStatus === 'PROCESSING' || isRetrying
+          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+          : 'bg-purple-50 text-purple-700 hover:bg-purple-100'
+      }`}
+    >
+      {isRetrying ? '...' : 'Retry Score'}
+    </button>
   )
 }
