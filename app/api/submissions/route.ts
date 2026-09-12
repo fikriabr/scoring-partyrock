@@ -7,8 +7,7 @@ export const runtime = 'nodejs'
 // route responds; give waitUntil() room to let that background work finish.
 export const maxDuration = 60
 
-import { NextRequest, NextResponse } from 'next/server'
-import { waitUntil } from '@vercel/functions'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { auth } from '@/lib/auth/config'
 import { handleApiError } from '@/lib/api-error'
 import { rateLimit } from '@/lib/rate-limit'
@@ -43,11 +42,11 @@ export async function POST(request: NextRequest) {
     // from the Capture Pipeline rather than a crawl, so scoring starts
     // immediately on whatever evidence was pasted at submission time.
     //
-    // waitUntil() keeps the serverless function alive until this promise
-    // settles even though the response below is already sent — without it,
-    // Vercel freezes/tears down the function right after the response and
-    // the scoring call gets killed mid-flight.
-    waitUntil(ScorerService.triggerScoring(project.id).catch(console.error))
+    // after() keeps the serverless function alive until this promise settles
+    // even though the response below is already sent — without it, Vercel
+    // freezes/tears down the function right after the response and the
+    // scoring call gets killed mid-flight.
+    after(() => ScorerService.triggerScoring(project.id).catch(console.error))
 
     return NextResponse.json(project, { status: 201 })
   } catch (error) {

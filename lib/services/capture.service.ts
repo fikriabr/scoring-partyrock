@@ -19,7 +19,7 @@
 //
 // Requirements: 4.2, 4.5, 4.6, 5.1
 
-import { waitUntil } from '@vercel/functions'
+import { after } from 'next/server'
 import { db } from '@/lib/db'
 import { ScorerService } from '@/lib/services/scorer.service'
 import { CaptureSchema, type CaptureData } from '@/lib/validators/schemas'
@@ -233,10 +233,10 @@ export async function ingestCapture(input: unknown): Promise<CaptureResult> {
         `${data.widgets.length} widget(s), ${data.prompts.length} prompt(s), ${data.outputs.length} output(s)`,
     )
 
-    // The caller should not wait on Gemini. waitUntil() keeps the enclosing
+    // The caller should not wait on Gemini. after() keeps the enclosing
     // serverless function alive until this settles instead of letting Vercel
     // tear it down right after the route's response is sent.
-    waitUntil(ScorerService.triggerScoring(project.id).catch(console.error))
+    after(() => ScorerService.triggerScoring(project.id).catch(console.error))
   }
 
   return {

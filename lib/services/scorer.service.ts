@@ -195,6 +195,14 @@ export class ScorerService {
 
     console.log(`[Scorer] Starting AI scoring for project ${projectId} — ${autoParameters.length} AUTO parameter(s)`)
 
+    // Mark scoring as actively running so pollers (e.g. the admin submissions
+    // UI) can distinguish "queued, not started" (PENDING) from "Gemini calls
+    // are in flight right now" (PROCESSING).
+    await db.project.update({
+      where: { id: projectId },
+      data: { scoreStatus: 'PROCESSING' },
+    })
+
     if (autoParameters.length === 0) {
       // Nothing to score — mark as SUCCESS with no AI scores.
       await db.project.update({

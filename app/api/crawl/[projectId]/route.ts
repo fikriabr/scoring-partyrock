@@ -8,8 +8,7 @@ export const runtime = 'nodejs'
 // background work finish after this route responds.
 export const maxDuration = 60
 
-import { NextRequest, NextResponse } from 'next/server'
-import { waitUntil } from '@vercel/functions'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { auth } from '@/lib/auth/config'
 import { handleApiError } from '@/lib/api-error'
 import { rateLimit } from '@/lib/rate-limit'
@@ -52,13 +51,13 @@ export async function POST(
       )
     }
 
-    // Trigger crawl asynchronously without blocking the response. waitUntil()
+    // Trigger crawl asynchronously without blocking the response. after()
     // keeps the serverless function alive until it settles instead of
     // letting Vercel tear it down right after the response is sent below.
     if (action === 'retrigger') {
-      waitUntil(CrawlerService.retriggerCrawl(projectId).catch(console.error))
+      after(() => CrawlerService.retriggerCrawl(projectId).catch(console.error))
     } else {
-      waitUntil(CrawlerService.triggerCrawl(projectId).catch(console.error))
+      after(() => CrawlerService.triggerCrawl(projectId).catch(console.error))
     }
 
     // Return the current project status (will transition to PROCESSING shortly)

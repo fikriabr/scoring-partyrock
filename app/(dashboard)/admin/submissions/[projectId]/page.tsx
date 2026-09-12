@@ -7,7 +7,11 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { db } from '@/lib/db'
-import { RetryButton } from '@/components/SubmissionForm'
+import {
+  LiveProjectStatusProvider,
+  LiveStatusBadges,
+  LiveRetryButtons,
+} from '@/components/LiveProjectStatus'
 import CaptureImportPanel from '@/components/CaptureImportPanel'
 import SourceCodeEditor from '@/components/SourceCodeEditor'
 
@@ -45,56 +49,54 @@ export default async function ProjectDetailPage({ params }: PageProps) {
         Back to Submissions
       </Link>
 
-      {/* Header card */}
+      {/* Header card — badges and retry buttons share one live-polling
+          provider so a retry click resumes polling immediately and a
+          status change flips both without a manual reload. */}
       <div className="rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-100">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-gray-900">
-              {project.participantName}
-            </h1>
-            {project.teamName && (
-              <p className="mt-1 text-sm text-gray-500">{project.teamName}</p>
-            )}
-            <a
-              href={project.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-2 inline-block text-sm text-blue-600 hover:text-blue-700 hover:underline break-all transition-colors"
-            >
-              {project.url}
-            </a>
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-gray-500">
-              <span className="rounded-md bg-gray-50 px-2 py-1">
-                Category: {project.category.name}
-              </span>
-              <StatusBadge status={project.crawlStatus} />
-              <StatusBadge status={project.scoreStatus} />
+        <LiveProjectStatusProvider
+          projectId={project.id}
+          initialCrawlStatus={project.crawlStatus}
+          initialScoreStatus={project.scoreStatus}
+        >
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight text-gray-900">
+                {project.participantName}
+              </h1>
+              {project.teamName && (
+                <p className="mt-1 text-sm text-gray-500">{project.teamName}</p>
+              )}
+              <a
+                href={project.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-2 inline-block text-sm text-blue-600 hover:text-blue-700 hover:underline break-all transition-colors"
+              >
+                {project.url}
+              </a>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                <span className="rounded-md bg-gray-50 px-2 py-1">
+                  Category: {project.category.name}
+                </span>
+                <LiveStatusBadges />
+              </div>
+            </div>
+
+            <div className="text-right">
+              <div className="text-xs uppercase tracking-wide text-gray-400">
+                Final Score
+              </div>
+              <div className="text-3xl font-bold text-gray-900">
+                {project.finalScore != null ? project.finalScore.toFixed(2) : '—'}
+              </div>
             </div>
           </div>
 
-          <div className="text-right">
-            <div className="text-xs uppercase tracking-wide text-gray-400">
-              Final Score
-            </div>
-            <div className="text-3xl font-bold text-gray-900">
-              {project.finalScore != null ? project.finalScore.toFixed(2) : '—'}
-            </div>
+          {/* Retry actions */}
+          <div className="mt-5 flex gap-2 border-t border-gray-50 pt-4">
+            <LiveRetryButtons />
           </div>
-        </div>
-
-        {/* Retry actions */}
-        <div className="mt-5 flex gap-2 border-t border-gray-50 pt-4">
-          <RetryButton
-            projectId={project.id}
-            type="crawl"
-            disabled={project.crawlStatus === 'PROCESSING'}
-          />
-          <RetryButton
-            projectId={project.id}
-            type="score"
-            disabled={project.scoreStatus === 'PROCESSING'}
-          />
-        </div>
+        </LiveProjectStatusProvider>
       </div>
 
       {/* Crawl Metadata section */}
@@ -313,30 +315,5 @@ export default async function ProjectDetailPage({ params }: PageProps) {
         </div>
       </section>
     </div>
-  )
-}
-
-// -----------------------------------------------------------------------
-// StatusBadge — renders a colored pill badge based on status enum value
-// (kept in sync with the badge on the submissions list page)
-// -----------------------------------------------------------------------
-function StatusBadge({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    PENDING: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
-    PROCESSING: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200',
-    SUCCESS: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
-    FAILED: 'bg-red-50 text-red-700 ring-1 ring-red-200',
-    PARTIAL: 'bg-orange-50 text-orange-700 ring-1 ring-orange-200',
-  }
-
-  const colorClass =
-    colors[status] ?? 'bg-gray-50 text-gray-700 ring-1 ring-gray-200'
-
-  return (
-    <span
-      className={`inline-flex items-center px-2.5 py-0.5 text-xs font-medium rounded-full ${colorClass}`}
-    >
-      {status}
-    </span>
   )
 }

@@ -8,8 +8,7 @@ export const runtime = 'nodejs'
 // route responds; give waitUntil() room to let that background work finish.
 export const maxDuration = 60
 
-import { NextRequest, NextResponse } from 'next/server'
-import { waitUntil } from '@vercel/functions'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { auth } from '@/lib/auth/config'
 import { handleApiError } from '@/lib/api-error'
 import { rateLimit } from '@/lib/rate-limit'
@@ -54,9 +53,9 @@ export async function POST(
     }
 
     // Trigger AI scoring asynchronously without blocking the response.
-    // waitUntil() keeps the serverless function alive until it settles
+    // after() keeps the serverless function alive until it settles
     // instead of letting Vercel tear it down right after the response below.
-    waitUntil(ScorerService.triggerScoring(projectId).catch(console.error))
+    after(() => ScorerService.triggerScoring(projectId).catch(console.error))
 
     // Return the project with current scoreStatus
     return NextResponse.json({

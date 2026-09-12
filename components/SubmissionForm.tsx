@@ -1,6 +1,5 @@
 // components/SubmissionForm.tsx
 // Client component for single project submission and CSV bulk upload.
-// Also provides retry crawl/score buttons for inline actions.
 // Requirements: 1.3, 1.4, 2.4, 3.1, 3.2, 3.3, 3.4, 3.5, 4.3, 4.4
 
 'use client'
@@ -505,53 +504,5 @@ function CsvUploadForm({
         </div>
       )}
     </form>
-  )
-}
-
-// -----------------------------------------------------------------------
-// RetryButton (exported for use in project tables)
-// Calls the crawl or score API endpoint to retry processing.
-// -----------------------------------------------------------------------
-export function RetryButton({
-  projectId,
-  type,
-  disabled,
-}: {
-  projectId: string
-  type: 'crawl' | 'score'
-  disabled?: boolean
-}) {
-  const [isPending, startTransition] = useTransition()
-  const router = useRouter()
-
-  const label = type === 'crawl' ? 'Retry Crawl' : 'Retry Score'
-
-  function handleClick() {
-    startTransition(async () => {
-      const endpoint =
-        type === 'crawl'
-          ? `/api/crawl/${projectId}?action=retrigger`
-          : `/api/score/${projectId}`
-
-      await fetch(endpoint, { method: 'POST' })
-      router.refresh()
-    })
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={handleClick}
-      disabled={disabled || isPending}
-      className={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors ${
-        disabled || isPending
-          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-          : type === 'crawl'
-            ? 'bg-blue-50 text-blue-700 hover:bg-blue-100'
-            : 'bg-purple-50 text-purple-700 hover:bg-purple-100'
-      }`}
-    >
-      {isPending ? '...' : label}
-    </button>
   )
 }

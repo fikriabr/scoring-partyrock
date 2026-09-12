@@ -9,6 +9,7 @@
 
 import Link from 'next/link'
 import { useState } from 'react'
+import { LiveProjectStatusProvider, LiveStatusBadge } from '@/components/LiveProjectStatus'
 
 // -----------------------------------------------------------------------
 // SerializedProject — shape of a project row as rendered by this table
@@ -29,6 +30,11 @@ export type SerializedProject = {
 
 // Number of rows shown while collapsed.
 const COLLAPSED_ROWS = 5
+
+// This list can render many rows at once, each polling independently, so it
+// uses a much longer interval than the detail page's 1-second default —
+// enough to notice a status change without hammering the API per row.
+const STATUS_POLL_INTERVAL_MS = 5 * 60 * 1000
 
 // -----------------------------------------------------------------------
 // ProjectsTable — card-wrapped, horizontally scrollable table of projects.
@@ -100,31 +106,10 @@ export default function ProjectsTable({
 }
 
 // -----------------------------------------------------------------------
-// StatusBadge — renders a colored pill badge based on status enum value
-// -----------------------------------------------------------------------
-function StatusBadge({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    PENDING: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
-    PROCESSING: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200',
-    SUCCESS: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
-    FAILED: 'bg-red-50 text-red-700 ring-1 ring-red-200',
-    PARTIAL: 'bg-orange-50 text-orange-700 ring-1 ring-orange-200',
-  }
-
-  const colorClass =
-    colors[status] ?? 'bg-gray-50 text-gray-700 ring-1 ring-gray-200'
-
-  return (
-    <span
-      className={`inline-flex items-center px-2.5 py-0.5 text-xs font-medium rounded-full ${colorClass}`}
-    >
-      {status}
-    </span>
-  )
-}
-
-// -----------------------------------------------------------------------
-// ProjectRow — renders a table row for a single project with action buttons
+// ProjectRow — renders a table row for a single project with action buttons.
+// Crawl/score badges are wrapped in LiveProjectStatusProvider so they poll
+// GET /api/submissions/[id] once a second while either is still
+// PENDING/PROCESSING, and stop once both settle.
 // -----------------------------------------------------------------------
 function ProjectRow({ project }: { project: SerializedProject }) {
   return (
@@ -147,12 +132,19 @@ function ProjectRow({ project }: { project: SerializedProject }) {
           {project.url}
         </a>
       </td>
-      <td className="px-4 py-3">
-        <StatusBadge status={project.crawlStatus} />
-      </td>
-      <td className="px-4 py-3">
-        <StatusBadge status={project.scoreStatus} />
-      </td>
+      <LiveProjectStatusProvider
+        projectId={project.id}
+        initialCrawlStatus={project.crawlStatus}
+        initialScoreStatus={project.scoreStatus}
+        pollIntervalMs={STATUS_POLL_INTERVAL_MS}
+      >
+        <td className="px-4 py-3">
+          <LiveStatusBadge field="crawl" />
+        </td>
+        <td className="px-4 py-3">
+          <LiveStatusBadge field="score" />
+        </td>
+      </LiveProjectStatusProvider>
       {/*
         Actions cell — only "View" is exposed here; the retry crawl/score
         buttons are hidden on this list and remain available on the

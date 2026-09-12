@@ -8,8 +8,7 @@ export const runtime = 'nodejs'
 // route responds; give waitUntil() room to let that background work finish.
 export const maxDuration = 60
 
-import { NextRequest, NextResponse } from 'next/server'
-import { waitUntil } from '@vercel/functions'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { auth } from '@/lib/auth/config'
 import { handleApiError } from '@/lib/api-error'
 import { rateLimit } from '@/lib/rate-limit'
@@ -21,6 +20,48 @@ import { db } from '@/lib/db'
 const limiter = rateLimit({ interval: 60_000, uniqueTokenPerInterval: 500 })
 
 type RouteContext = { params: Promise<{ id: string }> }
+
+// -----------------------------------------------------------------------
+// GET /api/submissions/[id] — poll crawl/score status for the admin UI's
+// live status badges. Deliberately not rate-limited like the mutating
+// routes below: the UI polls this once a second while a project is
+// PENDING/PROCESSING, which the 10-per-minute mutation limiter would block.
+// -----------------------------------------------------------------------
+export async function GET(request: NextRequest, context: RouteContext) {
+  try {
+    const session = await auth()
+    if (!session || session.user.role !== 'ADMIN') {
+      return NextResponse.json(
+        { error: 'Forbidden', message: 'Admin only', code: 'FORBIDDEN' },
+        { status: 403 },
+      )
+    }
+
+    const { id } = await context.params
+
+    const project = await db.project.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        crawlStatus: true,
+        crawlError: true,
+        scoreStatus: true,
+        finalScore: true,
+      },
+    })
+
+    if (!project) {
+      return NextResponse.json(
+        { error: 'Not Found', message: 'Project not found', code: 'NOT_FOUND' },
+        { status: 404 },
+      )
+    }
+
+    return NextResponse.json(project)
+  } catch (error) {
+    return handleApiError(error)
+  }
+}
 
 // -----------------------------------------------------------------------
 // PATCH /api/submissions/[id] — replace a project's Source Code
@@ -84,10 +125,10 @@ export async function PATCH(
 
     // Re-scoring runs on the AI provider's clock, well past any request
     // timeout. The row already reads PENDING, so a caller who never sees this
-    // promise settle still reads a truthful status. waitUntil() keeps the
+    // promise settle still reads a truthful status. after() keeps the
     // serverless function alive until it settles instead of letting Vercel
     // tear it down right after the response below is sent.
-    waitUntil(ScorerService.triggerScoring(id).catch(console.error))
+    after(() => ScorerService.triggerScoring(id).catch(console.error))
 
     return NextResponse.json(updated)
   } catch (error) {
