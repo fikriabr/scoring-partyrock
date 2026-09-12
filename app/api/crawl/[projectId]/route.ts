@@ -4,8 +4,12 @@
 // Requirements: 4.1, 4.4, 4.6, 9.6
 
 export const runtime = 'nodejs'
+// Crawl chains into AI scoring on success; give waitUntil() room to let that
+// background work finish after this route responds.
+export const maxDuration = 60
 
 import { NextRequest, NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
 import { auth } from '@/lib/auth/config'
 import { handleApiError } from '@/lib/api-error'
 import { rateLimit } from '@/lib/rate-limit'
@@ -48,11 +52,13 @@ export async function POST(
       )
     }
 
-    // Fire-and-forget: trigger crawl asynchronously without blocking the response
+    // Trigger crawl asynchronously without blocking the response. waitUntil()
+    // keeps the serverless function alive until it settles instead of
+    // letting Vercel tear it down right after the response is sent below.
     if (action === 'retrigger') {
-      CrawlerService.retriggerCrawl(projectId).catch(console.error)
+      waitUntil(CrawlerService.retriggerCrawl(projectId).catch(console.error))
     } else {
-      CrawlerService.triggerCrawl(projectId).catch(console.error)
+      waitUntil(CrawlerService.triggerCrawl(projectId).catch(console.error))
     }
 
     // Return the current project status (will transition to PROCESSING shortly)

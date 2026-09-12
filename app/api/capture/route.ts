@@ -8,6 +8,9 @@
 // Requirements: 4.2, 4.5, 4.6, 5.1, 9.3, 9.5
 
 export const runtime = 'nodejs'
+// Ingestion chains into AI scoring for each matched project; give waitUntil()
+// room to let that background work finish after this route responds.
+export const maxDuration = 60
 
 import { NextRequest, NextResponse } from 'next/server'
 import { handleApiError } from '@/lib/api-error'

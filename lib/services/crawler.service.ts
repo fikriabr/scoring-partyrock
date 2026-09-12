@@ -19,6 +19,7 @@
 // widgetCount is still 0 has not been captured yet, and its AI score rests on
 // title and description alone.
 
+import { waitUntil } from '@vercel/functions'
 import { db } from '@/lib/db'
 import { ScorerService } from '@/lib/services/scorer.service'
 import { Prisma } from '@prisma/client'
@@ -102,7 +103,10 @@ export class CrawlerService {
       console.log('[Crawler] Metadata saved. Status set to SUCCESS.')
 
       console.log('[Crawler] Triggering AI scoring for project ' + projectId + '...')
-      ScorerService.triggerScoring(projectId).catch(console.error)
+      // Registers this promise with the enclosing request's waitUntil() so it
+      // also gets to finish, even though triggerCrawl's own returned promise
+      // resolves without waiting for it.
+      waitUntil(ScorerService.triggerScoring(projectId).catch(console.error))
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Unknown crawl error'

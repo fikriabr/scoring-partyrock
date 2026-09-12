@@ -4,8 +4,12 @@
 // Requirements: 5.2, 5.3, 5.4
 
 export const runtime = 'nodejs'
+// Scoring runs one Gemini call per AUTO parameter (in parallel) after this
+// route responds; give waitUntil() room to let that background work finish.
+export const maxDuration = 60
 
 import { NextRequest, NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
 import { auth } from '@/lib/auth/config'
 import { handleApiError } from '@/lib/api-error'
 import { rateLimit } from '@/lib/rate-limit'
@@ -78,10 +82,12 @@ export async function PATCH(
       select: { id: true, sourceCode: true, scoreStatus: true },
     })
 
-    // Fire-and-forget: re-scoring runs on the AI provider's clock, well past
-    // any request timeout. The row already reads PENDING, so a caller who
-    // never sees this promise settle still reads a truthful status.
-    ScorerService.triggerScoring(id).catch(console.error)
+    // Re-scoring runs on the AI provider's clock, well past any request
+    // timeout. The row already reads PENDING, so a caller who never sees this
+    // promise settle still reads a truthful status. waitUntil() keeps the
+    // serverless function alive until it settles instead of letting Vercel
+    // tear it down right after the response below is sent.
+    waitUntil(ScorerService.triggerScoring(id).catch(console.error))
 
     return NextResponse.json(updated)
   } catch (error) {

@@ -4,8 +4,12 @@
 // Requirements: 5.1, 5.8, 9.6
 
 export const runtime = 'nodejs'
+// Scoring runs one Gemini call per AUTO parameter (in parallel) after this
+// route responds; give waitUntil() room to let that background work finish.
+export const maxDuration = 60
 
 import { NextRequest, NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
 import { auth } from '@/lib/auth/config'
 import { handleApiError } from '@/lib/api-error'
 import { rateLimit } from '@/lib/rate-limit'
@@ -49,8 +53,10 @@ export async function POST(
       )
     }
 
-    // Fire-and-forget: trigger AI scoring asynchronously without blocking the response
-    ScorerService.triggerScoring(projectId).catch(console.error)
+    // Trigger AI scoring asynchronously without blocking the response.
+    // waitUntil() keeps the serverless function alive until it settles
+    // instead of letting Vercel tear it down right after the response below.
+    waitUntil(ScorerService.triggerScoring(projectId).catch(console.error))
 
     // Return the project with current scoreStatus
     return NextResponse.json({
