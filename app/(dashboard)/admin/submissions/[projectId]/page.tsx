@@ -11,7 +11,9 @@ import {
   LiveProjectStatusProvider,
   LiveStatusBadges,
   LiveRetryButtons,
+  LiveCancelButton,
 } from '@/components/LiveProjectStatus'
+import DeleteProjectButton from '@/components/DeleteProjectButton'
 import CaptureImportPanel from '@/components/CaptureImportPanel'
 import SourceCodeEditor from '@/components/SourceCodeEditor'
 
@@ -24,8 +26,10 @@ export default async function ProjectDetailPage({ params }: PageProps) {
 
   // No explicit `select` here, so every Project column — projectType
   // included — comes back with the row. Requirements: 1.7
+  // A soft-deleted project (deletedAt set) reads as not-found here, same
+  // as everywhere else in the app.
   const project = await db.project.findUnique({
-    where: { id: projectId },
+    where: { id: projectId, deletedAt: null },
     include: {
       category: true,
       metadata: true,
@@ -92,9 +96,16 @@ export default async function ProjectDetailPage({ params }: PageProps) {
             </div>
           </div>
 
-          {/* Retry actions */}
-          <div className="mt-5 flex gap-2 border-t border-gray-50 pt-4">
-            <LiveRetryButtons />
+          {/* Retry / cancel / delete actions */}
+          <div className="mt-5 flex items-center justify-between gap-2 border-t border-gray-50 pt-4">
+            <div className="flex gap-2">
+              <LiveRetryButtons />
+              <LiveCancelButton />
+            </div>
+            <DeleteProjectButton
+              projectId={project.id}
+              participantName={project.participantName}
+            />
           </div>
         </LiveProjectStatusProvider>
       </div>

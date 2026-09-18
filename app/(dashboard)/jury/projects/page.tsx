@@ -56,9 +56,10 @@ export default async function JuryProjectsPage({
       ? [selectedCategoryId]
       : assignedCategoryIds
 
-  // Fetch projects in assigned categories with parameters and jury scores
+  // Fetch projects in assigned categories with parameters and jury scores.
+  // Soft-deleted projects (deletedAt set) never show up here.
   const projects = await db.project.findMany({
-    where: { categoryId: { in: categoriesToFetch } },
+    where: { categoryId: { in: categoriesToFetch }, deletedAt: null },
     orderBy: { createdAt: 'desc' },
     include: {
       category: {

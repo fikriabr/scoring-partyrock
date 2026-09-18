@@ -41,7 +41,7 @@ export async function POST(
 
     // Verify project exists
     const project = await db.project.findUnique({
-      where: { id: projectId },
+      where: { id: projectId, deletedAt: null },
       select: { id: true, scoreStatus: true },
     })
 

@@ -51,7 +51,7 @@ export async function submitJuryScore(
       userId: juryId,
       category: {
         projects: {
-          some: { id: projectId },
+          some: { id: projectId, deletedAt: null },
         },
       },
     },
@@ -174,7 +174,7 @@ export async function acceptAiScore(
       userId: juryId,
       category: {
         projects: {
-          some: { id: projectId },
+          some: { id: projectId, deletedAt: null },
         },
       },
     },

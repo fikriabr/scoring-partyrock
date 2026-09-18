@@ -146,11 +146,14 @@ export async function submitProject(input: unknown): Promise<Project> {
   // Validate via Zod — throws ZodError on invalid input
   const data: SubmissionInput = SubmissionSchema.parse(input)
 
-  // Duplicate check: same URL within the same category
+  // Duplicate check: same URL within the same category. Soft-deleted
+  // projects don't count — deleting a submission frees up its URL so it
+  // can be resubmitted.
   const existing = await db.project.findFirst({
     where: {
       categoryId: data.categoryId,
       url: data.url,
+      deletedAt: null,
     },
   })
 
@@ -287,9 +290,10 @@ export async function bulkImportFromCsv(
     const { url, participantName, teamName, sourceCode } = parsed.data
 
     try {
-      // Skip silently if exact duplicate (same URL + categoryId) already exists
+      // Skip silently if exact duplicate (same URL + categoryId) already
+      // exists. Soft-deleted projects don't count.
       const existing = await db.project.findFirst({
-        where: { categoryId, url },
+        where: { categoryId, url, deletedAt: null },
       })
 
       if (existing) {
@@ -322,4 +326,60 @@ export async function bulkImportFromCsv(
   }
 
   return { imported: created.length, created, errors }
+}
+
+// -----------------------------------------------------------------------
+// deleteProject
+// Soft-deletes a project by stamping `deletedAt` — crawl metadata, AI
+// scores and jury scores are kept, not removed, so a mistaken delete stays
+// recoverable (directly in the database; there is no restore UI yet). Every
+// project lookup used by admin/jury views and the crawl/score pipeline
+// filters `deletedAt: null`, so a soft-deleted project simply disappears
+// from the app without its history being destroyed.
+// -----------------------------------------------------------------------
+export async function deleteProject(id: string): Promise<void> {
+  await db.project.update({
+    where: { id },
+    data: { deletedAt: new Date() },
+  })
+}
+
+export type CancelProcessingResult = {
+  id: string
+  crawlStatus: Project['crawlStatus']
+  scoreStatus: Project['scoreStatus']
+}
+
+// -----------------------------------------------------------------------
+// cancelProcessing
+// Force-fails a project's crawl and/or score pipeline when it is stuck in
+// PENDING/PROCESSING (e.g. the background job died without ever writing a
+// terminal status). Only touches whichever of the two is actually stuck —
+// a project mid-crawl with an already-scored history keeps its score
+// status untouched — so the admin can then use Retry to run it again.
+// -----------------------------------------------------------------------
+export async function cancelProcessing(id: string): Promise<CancelProcessingResult> {
+  const project = await db.project.findUniqueOrThrow({
+    where: { id },
+    select: { crawlStatus: true, scoreStatus: true },
+  })
+
+  const NON_TERMINAL_CRAWL = ['PENDING', 'PROCESSING']
+  const NON_TERMINAL_SCORE = ['PENDING', 'PROCESSING']
+
+  const updated = await db.project.update({
+    where: { id },
+    data: {
+      ...(NON_TERMINAL_CRAWL.includes(project.crawlStatus) && {
+        crawlStatus: 'FAILED',
+        crawlError: 'Cancelled by admin.',
+      }),
+      ...(NON_TERMINAL_SCORE.includes(project.scoreStatus) && {
+        scoreStatus: 'FAILED',
+      }),
+    },
+    select: { id: true, crawlStatus: true, scoreStatus: true },
+  })
+
+  return updated
 }

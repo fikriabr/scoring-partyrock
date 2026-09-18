@@ -179,9 +179,11 @@ export class ScorerService {
    * AI scores using calculateWeightedScore.
    */
   static async triggerScoring(projectId: string): Promise<void> {
-    // 1. Fetch project with category parameters and crawl metadata
+    // 1. Fetch project with category parameters and crawl metadata. Throws
+    // if the project was soft-deleted since this was queued — a deleted
+    // project should never get a fresh score written to it.
     const project = await db.project.findUniqueOrThrow({
-      where: { id: projectId },
+      where: { id: projectId, deletedAt: null },
       include: {
         category: { include: { parameters: true } },
         metadata: true,

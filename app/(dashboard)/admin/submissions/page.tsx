@@ -9,8 +9,10 @@ import { groupProjectsByCategory } from '@/lib/submission-grouping'
 import ProjectsTable from '@/components/ProjectsTable'
 
 export default async function AdminSubmissionsPage() {
-  // Fetch all projects with category info
+  // Fetch all projects with category info. Soft-deleted projects
+  // (deletedAt set) never show up here.
   const projects = await db.project.findMany({
+    where: { deletedAt: null },
     orderBy: { createdAt: 'desc' },
     include: {
       category: {

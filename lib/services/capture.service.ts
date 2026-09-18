@@ -100,7 +100,7 @@ export async function findProjectsForUrl(
 ) {
   const scope = categoryId ? { categoryId } : {}
   const candidates = await db.project.findMany({
-    where: scope,
+    where: { ...scope, deletedAt: null },
     select: { id: true, url: true, participantName: true, categoryId: true },
   })
 

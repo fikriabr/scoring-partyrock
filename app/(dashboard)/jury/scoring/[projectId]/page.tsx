@@ -22,9 +22,10 @@ export default async function JuryScoringPage({
   const { projectId } = await params
   const userId = session.user.id
 
-  // Fetch project with full data: metadata, AI scores, jury scores, parameters
+  // Fetch project with full data: metadata, AI scores, jury scores,
+  // parameters. A soft-deleted project reads as not-found here too.
   const project = await db.project.findUnique({
-    where: { id: projectId },
+    where: { id: projectId, deletedAt: null },
     include: {
       category: {
         include: {

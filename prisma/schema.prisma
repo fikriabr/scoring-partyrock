@@ -118,6 +118,7 @@ model Project {
   crawlError      String?
   scoreStatus     ScoreStatus @default(PENDING)
   finalScore      Float?
+  deletedAt       DateTime?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 

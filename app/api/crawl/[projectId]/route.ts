@@ -43,7 +43,9 @@ export async function POST(
     const action = request.nextUrl.searchParams.get('action') ?? 'trigger'
 
     // Validate the project exists
-    const project = await db.project.findUnique({ where: { id: projectId } })
+    const project = await db.project.findUnique({
+      where: { id: projectId, deletedAt: null },
+    })
     if (!project) {
       return NextResponse.json(
         { error: 'Not Found', message: 'Project not found', code: 'NOT_FOUND' },

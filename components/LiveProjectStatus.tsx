@@ -47,6 +47,8 @@ type ContextValue = {
   status: ProjectStatus
   isRetrying: boolean
   retryScoring: () => void
+  isCancelling: boolean
+  cancelProcessing: () => void
 }
 
 const LiveProjectStatusContext = createContext<ContextValue | null>(null)
@@ -69,6 +71,7 @@ export function LiveProjectStatusProvider({
     scoreStatus: initialScoreStatus,
   })
   const [isRetrying, setIsRetrying] = useState(false)
+  const [isCancelling, setIsCancelling] = useState(false)
   const router = useRouter()
   // Guards against refreshing more than once for the same non-terminal run.
   const hasRefreshedRef = useRef(false)
@@ -112,8 +115,24 @@ export function LiveProjectStatusProvider({
       .finally(() => setIsRetrying(false))
   }, [projectId, router])
 
+  const cancelProcessing = useCallback(() => {
+    setIsCancelling(true)
+    fetch(`/api/submissions/${projectId}/cancel`, { method: 'POST' })
+      .then(async (response) => {
+        if (!response.ok) return
+        // The route only fails whichever of crawl/score was actually stuck,
+        // so trust its response over guessing locally.
+        const data: ProjectStatus = await response.json()
+        setStatus(data)
+        router.refresh()
+      })
+      .finally(() => setIsCancelling(false))
+  }, [projectId, router])
+
   return (
-    <LiveProjectStatusContext.Provider value={{ status, isRetrying, retryScoring }}>
+    <LiveProjectStatusContext.Provider
+      value={{ status, isRetrying, retryScoring, isCancelling, cancelProcessing }}
+    >
       {children}
     </LiveProjectStatusContext.Provider>
   )
@@ -218,6 +237,37 @@ export function LiveRetryButtons() {
       }`}
     >
       {isRetrying ? '...' : 'Retry Score'}
+    </button>
+  )
+}
+
+// -----------------------------------------------------------------------
+// LiveCancelButton — only rendered while crawl and/or score is stuck in
+// PENDING/PROCESSING. Force-fails whichever pipeline is stuck (see
+// POST /api/submissions/[id]/cancel) so the project stops spinning forever
+// and Retry Score becomes available again.
+// -----------------------------------------------------------------------
+export function LiveCancelButton() {
+  const { status, isCancelling, cancelProcessing } = useLiveProjectStatusContext()
+
+  if (isTerminal(status)) return null
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (window.confirm('Cancel the stuck crawl/score process for this project?')) {
+          cancelProcessing()
+        }
+      }}
+      disabled={isCancelling}
+      className={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors ${
+        isCancelling
+          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+          : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+      }`}
+    >
+      {isCancelling ? '...' : 'Cancel Process'}
     </button>
   )
 }

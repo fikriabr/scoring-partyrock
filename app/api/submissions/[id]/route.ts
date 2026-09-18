@@ -14,6 +14,7 @@ import { handleApiError } from '@/lib/api-error'
 import { rateLimit } from '@/lib/rate-limit'
 import { SourceCodeUpdateSchema } from '@/lib/validators/schemas'
 import { ScorerService } from '@/lib/services/scorer.service'
+import { deleteProject } from '@/lib/services/submission.service'
 import { db } from '@/lib/db'
 
 // Rate limiter: 10 requests per 60 seconds per user
@@ -40,7 +41,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const { id } = await context.params
 
     const project = await db.project.findUnique({
-      where: { id },
+      where: { id, deletedAt: null },
       select: {
         id: true,
         crawlStatus: true,
@@ -98,7 +99,7 @@ export async function PATCH(
     // unknown id is more useful than a validation error about a row that does
     // not exist.
     const project = await db.project.findUnique({
-      where: { id },
+      where: { id, deletedAt: null },
       select: { id: true },
     })
     if (!project) {
@@ -131,6 +132,48 @@ export async function PATCH(
     after(() => ScorerService.triggerScoring(id).catch(console.error))
 
     return NextResponse.json(updated)
+  } catch (error) {
+    return handleApiError(error)
+  }
+}
+
+// -----------------------------------------------------------------------
+// DELETE /api/submissions/[id] — soft-delete a project (stamps `deletedAt`;
+// crawl metadata, AI scores and jury scores are kept). An already
+// soft-deleted project reads as 404 here too, same as everywhere else.
+// -----------------------------------------------------------------------
+export async function DELETE(
+  request: NextRequest,
+  context: RouteContext,
+) {
+  try {
+    const session = await auth()
+    if (!session || session.user.role !== 'ADMIN') {
+      return NextResponse.json(
+        { error: 'Forbidden', message: 'Admin only', code: 'FORBIDDEN' },
+        { status: 403 },
+      )
+    }
+
+    // Rate limit: 10 requests per minute per authenticated user
+    limiter.check(10, session.user.id)
+
+    const { id } = await context.params
+
+    const project = await db.project.findUnique({
+      where: { id, deletedAt: null },
+      select: { id: true },
+    })
+    if (!project) {
+      return NextResponse.json(
+        { error: 'Not Found', message: 'Project not found', code: 'NOT_FOUND' },
+        { status: 404 },
+      )
+    }
+
+    await deleteProject(id)
+
+    return new NextResponse(null, { status: 204 })
   } catch (error) {
     return handleApiError(error)
   }

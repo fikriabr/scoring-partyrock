@@ -52,8 +52,10 @@ export class CrawlerService {
    * Fetch project, run crawl, persist CrawlMetadata, and update crawl status.
    */
   static async triggerCrawl(projectId: string): Promise<void> {
+    // Throws if the project was soft-deleted since this was queued — a
+    // deleted project should never get fresh crawl data written to it.
     const project = await db.project.findUniqueOrThrow({
-      where: { id: projectId },
+      where: { id: projectId, deletedAt: null },
       include: { category: true },
     })
 

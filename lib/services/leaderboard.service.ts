@@ -137,7 +137,7 @@ export async function getLeaderboard(
   categoryId: string,
 ): Promise<ProjectWithScores[]> {
   const projects = await db.project.findMany({
-    where: { categoryId },
+    where: { categoryId, deletedAt: null },
     include: PROJECT_INCLUDE,
   })
 

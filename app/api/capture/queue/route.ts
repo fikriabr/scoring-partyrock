@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
     const pendingOnly = request.nextUrl.searchParams.get('pending') === '1'
 
     const projects = await db.project.findMany({
-      where: categoryId ? { categoryId } : {},
+      where: { ...(categoryId ? { categoryId } : {}), deletedAt: null },
       orderBy: { createdAt: 'asc' },
       select: {
         id: true,
